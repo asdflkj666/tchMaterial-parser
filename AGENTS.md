@@ -55,9 +55,29 @@
 7. **界面控件句柄**统一放在 `download_panel.widgets`（`PanelWidgets` 容器）里，由 `app.py` 通过 `bind_widgets()` 注入；新增控件请在容器里加字段，不要再引入模块级全局变量。
 8. **日志**统一走 `download_panel.log_message()`（可在任意线程调用，内部切回主线程），失败原因要带 HTTP 状态码的中文解释（`HTTP_STATUS_HINTS` / `status_hint()`）。
 
+## 测试与检查
+
+```sh
+python -m pip install pytest flake8
+python -m pytest tests/ -q
+python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+```
+
+- 改动下载相关逻辑时，除单测外请特别关注 `tests/test_download_control.py`、`tests/test_download_batch.py`、`tests/test_download_progress.py`。
+- 部分测试直接 patch 模块级参数（如 `download_panel._PROGRESS_REFRESH_INTERVAL`、`_MIN_REQUEST_INTERVAL`、`_400_RETRY_DELAYS`），**不要把这些变量内联或改名**。
+- GUI 只能用真实桌面环境验收，不要在无图形界面的环境里硬跑。
+
+## 构建与发布
+
+- 打包使用 `tchMaterial-parser.spec`（PyInstaller）：Windows 依赖 `version_info.txt` 与 `assets/icon.ico`，macOS 依赖 `assets/logo.icns`。这几个是**真实文件**（索引里 100644），处理打包配置时不要把 `assets/` 下的软链接误当成它们。
+- 发布由 `.github/workflows/build-release.yml` 自动完成：矩阵覆盖 Windows / Linux / macOS 的 x64 与 Arm64，**创建并发布 Release**（`release: published`）或手动 `workflow_dispatch`（需填 tag）即可触发，构建产物会自动挂到该 Release。
+- **tag 命名要避开上游已用过的 tag**（上游已发布到 `v4.x`），建议形如 `v<版本>-fork.<序号>`；若采用 `v4.3.1` 这类正式版本号，需同步修改 `pyproject.toml` 与 `version_info.txt` 中的版本。
+- 产物为**未签名**构建，杀毒软件可能提示；发布说明中应写明这一点，并说明本仓库的增强功能**不包含**在上游发布的安装包中。
+
 ## Git 操作
 
 1. 除非用户要求，否则不要执行 commit 与 push。
 2. 若被用户要求写 commit：
    - 请只生成遵循「**Conventional Commit**」的提交消息，内容应当描述为「最后一个 commit → 当前工作区」的**整体 diff**，而不应该提及本次实现过程中的尝试、报错、排查、返工或中间修正的迭代过程；
    - 若该 commit 能够关闭一个 issue，请在提交消息末尾加上 `close #xxx` 以确保 issue 关闭时能够与此 commit 关联，而不是使用 `fix(#xxx): xxx` 等格式。
+3. 本仓库是上游的 fork：`origin` 为本人仓库，`upstream` 为上游官方仓库。同步上游修复时使用 `cherry-pick`（保留原作者署名），不要直接把 `main` 重置成上游状态，以免丢掉本仓库的增强提交。
