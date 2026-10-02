@@ -8,6 +8,7 @@ import psutil
 from PIL import Image, ImageTk
 
 from . import __version__
+from . import config
 from .catalog import ResourceHelper
 from .config import load_access_token, load_config, save_config
 from .images import make_icon_image, render_system_emoji
@@ -16,6 +17,7 @@ from .ui import download_panel, runtime, theme
 from .ui.about_window import show_about_window
 from .ui.resource_tree import build_resource_tree
 from .ui.runtime import scaled
+from .ui.settings_window import show_download_settings_window
 from .ui.token_window import show_access_token_window
 from .ui.widgets import auto_hide_scrollbar, bind_context_menu, bind_tab_navigation, center_window
 
@@ -24,6 +26,7 @@ DESCRIPTION_ITEMS = (
     ("📌", "在右侧的文本框中输入一个或多个资源页面的网址（每行一个），或直接在左侧的列表中选择资源。"),
     ("🔗️", "网址示例：https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&contentId=..."),
     ("📥", "点击 “下载” 解析并下载资源；点击 “解析并复制” 则只把资源的直链复制到剪贴板。"),
+    ("📋", "下方的“下载日志”会记录每个文件的结果与失败原因；遇到限流时会说明判定依据，并显示冷却倒计时。"),
     ("ℹ️", "为了更可靠地下载，建议先点击 “设置 Token”，参照里面的说明完成设置。"),
 )
 
@@ -44,6 +47,10 @@ def main() -> None: # 程序入口：初始化界面并进入主循环
     # 配置只读取一次，同时用于恢复 Access Token 与主题
     saved_config = load_config()
     load_access_token(saved_config)
+    config.load_download_settings(saved_config) # 下载技术配置（并发、限流、重试等）
+    # 把配置变更接回下载模块：这样设置窗口只需写 config，不必直接依赖下载面板
+    config.on_download_settings_changed(download_panel.apply_download_settings)
+    download_panel.apply_download_settings() # 启动时先同步一次派生参数
 
     # 获取资源列表
     try:
@@ -102,6 +109,10 @@ def main() -> None: # 程序入口：初始化界面并进入主循环
                 return
 
         runtime.app_closing = True
+
+        # 取消尚未完成的下载并等线程收尾：直接销毁窗口会留下 .tmp 半成品；
+        # 而且线程池的工作线程是非 daemon 的，不等它们结束会让进程在后台滞留到下载完成。
+        download_panel.shutdown_downloads()
 
         try:
             current_process = psutil.Process(os.getpid()) # 获取自身的进程 ID
@@ -225,25 +236,55 @@ def main() -> None: # 程序入口：初始化界面并进入主循环
     treeview_pane = ttk.Frame(paned, padding=(0, 0, scaled(8), 0)) # 创建树视图的子框架，放在分割窗口的左侧（右侧留出与分割条之间的间距）
     text_pane = ttk.Frame(paned, padding=(scaled(8), 0, 0, 0)) # 创建文本框的子框架，放在分割窗口的右侧
     text_pane.columnconfigure(0, weight=1)
-    text_pane.rowconfigure(1, weight=1)
+    text_pane.rowconfigure(0, weight=1)
     paned.add(treeview_pane)
     paned.add(text_pane)
     paned.update_idletasks()
     root.after(0, lambda: paned.sashpos(0, int(paned.winfo_width() * 0.4))) # 设置分割条的位置为窗口宽度的 40%（不能使用 ui_call、root.after_idle）
 
-    url_label = ttk.Label(text_pane, text="资源页面网址", style="Heading.TLabel") # 添加 URL 标签
+    # 右侧栏再上下分成两块：上方填写网址，下方是下载日志（可拖动分割条调整比例）
+    right_panes = ttk.PanedWindow(text_pane, orient="vertical")
+    right_panes.grid(row=0, column=0, sticky="nsew")
+    url_pane = ttk.Frame(right_panes)
+    url_pane.columnconfigure(0, weight=1)
+    url_pane.rowconfigure(1, weight=1)
+    log_pane = ttk.Frame(right_panes, padding=(0, scaled(10), 0, 0))
+    log_pane.columnconfigure(0, weight=1)
+    log_pane.rowconfigure(1, weight=1)
+    right_panes.add(url_pane)
+    right_panes.add(log_pane)
+    right_panes.update_idletasks()
+    root.after(0, lambda: right_panes.sashpos(0, max(int(right_panes.winfo_height() * 0.45), scaled(120)))) # 上方网址框约占 45%
+
+    url_label = ttk.Label(url_pane, text="资源页面网址", style="Heading.TLabel") # 添加 URL 标签
     url_label.grid(row=0, column=0, sticky="w", pady=(0, scaled(6)))
-    url_card = ttk.Frame(text_pane, style="Card.TFrame") # 外面套一层卡片，使输入框拥有与树视图一致的圆角边框
+    url_card = ttk.Frame(url_pane, style="Card.TFrame") # 外面套一层卡片，使输入框拥有与树视图一致的圆角边框
     url_card.grid(row=1, column=0, sticky="nsew")
     url_text = tk.Text(url_card, width=40, height=8, wrap="char", undo=True, font="AppBodyFont", padx=scaled(6), pady=scaled(4)) # 添加 URL 输入框
     url_text.pack(fill="both", expand=True)
     theme.register_themed_widget(url_text) # 让输入框的配色跟随主题
     bind_context_menu(url_text) # 为 URL 输入框创建右键菜单
     bind_tab_navigation(url_text) # 绑定 Tab 键导航
-    text_scrollbar = ttk.Scrollbar(text_pane, orient="vertical", command=url_text.yview)
+    text_scrollbar = ttk.Scrollbar(url_pane, orient="vertical", command=url_text.yview)
     url_text.configure(yscrollcommand=lambda f, l: auto_hide_scrollbar(text_scrollbar, f, l))
     text_scrollbar.grid(row=1, column=1, sticky="ns")
     url_text.focus()
+
+    # 下载日志：记录每个文件的完成/失败原因、限流判定与冷却倒计时，便于定位问题类型
+    log_header = ttk.Frame(log_pane)
+    log_header.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, scaled(6)))
+    ttk.Label(log_header, text="下载日志", style="Heading.TLabel").pack(side="left")
+    clear_log_btn = ttk.Button(log_header, text="清空", width=6, command=download_panel.clear_log)
+    clear_log_btn.pack(side="right")
+    log_card = ttk.Frame(log_pane, style="Card.TFrame")
+    log_card.grid(row=1, column=0, sticky="nsew")
+    log_text = tk.Text(log_card, width=40, height=8, wrap="word", undo=False, font="AppBodyFont", padx=scaled(6), pady=scaled(4), state="disabled")
+    log_text.pack(fill="both", expand=True)
+    theme.register_themed_widget(log_text)
+    bind_context_menu(log_text, "readonly") # 日志只读，但允许复制与全选
+    log_scrollbar = ttk.Scrollbar(log_pane, orient="vertical", command=log_text.yview)
+    log_text.configure(yscrollcommand=lambda f, l: auto_hide_scrollbar(log_scrollbar, f, l))
+    log_scrollbar.grid(row=1, column=1, sticky="ns")
 
     build_resource_tree(treeview_pane, resource_list, url_text) # 构建左侧资源列表（需要 URL 输入框以便选中资源时写入网址）
 
@@ -267,6 +308,10 @@ def main() -> None: # 程序入口：初始化界面并进入主循环
     token_btn = ttk.Button(button_frame, text="设置 Token", command=show_access_token_window)
     token_btn.pack(side="left")
 
+    # 按钮：下载设置（并发、限流保护、重试等技术配置）
+    settings_btn = ttk.Button(button_frame, text="下载设置", command=show_download_settings_window)
+    settings_btn.pack(side="left", padx=(scaled(10), 0))
+
     # 开关：添加 PDF 书签
     bookmark_var = tk.BooleanVar(value=True)
     bookmark_checkbox = ttk.Checkbutton(button_frame, text="添加 PDF 书签", variable=bookmark_var, style=theme.SWITCH_STYLE)
@@ -280,8 +325,14 @@ def main() -> None: # 程序入口：初始化界面并进入主循环
     copy_btn = ttk.Button(button_frame, text="解析并复制", width=9, command=download_panel.parse_and_copy)
     copy_btn.pack(side="right", padx=(0, scaled(8)))
 
+    # 按钮：暂停/继续 与 取消（仅下载进行中可用）
+    cancel_btn = ttk.Button(button_frame, text="取消", width=6, state="disabled", command=download_panel.cancel_downloads)
+    cancel_btn.pack(side="right", padx=(0, scaled(8)))
+    pause_btn = ttk.Button(button_frame, text="暂停", width=6, state="disabled", command=download_panel.toggle_pause)
+    pause_btn.pack(side="right", padx=(0, scaled(8)))
+
     # 下载相关的控件全部就位后，写入下载面板模块，供其中的解析与下载流程使用
-    download_panel.bind_widgets(url_text, bookmark_var, download_btn, copy_btn, download_progress_bar, progress_label)
+    download_panel.bind_widgets(url_text, bookmark_var, download_btn, copy_btn, download_progress_bar, progress_label, pause_btn, cancel_btn, log_text)
 
     # 最后打包内容区，使其占据剩余的全部空间
     paned.pack(side="top", fill="both", expand=True, pady=(scaled(14), 0))

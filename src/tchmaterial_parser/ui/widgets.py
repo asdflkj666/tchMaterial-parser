@@ -55,7 +55,8 @@ def bind_context_menu(parent: tk.Widget, menu_type: Literal["normal", "noundo", 
 
     # 绑定右键菜单到文本框
     parent.bind("<Button-3>", show_context_menu) # 鼠标右键
-    parent.bind("<Menu>", lambda e: show_context_menu(e, True)) # BUG: 按下菜单键不起作用
+    parent.bind("<Menu>", lambda e: show_context_menu(e, True)) # Unix 上的菜单键
+    parent.bind("<App>", lambda e: show_context_menu(e, True)) # Windows 上的菜单键（VK_APPS 映射为 App）
     parent.bind("<Shift-F10>", lambda e: show_context_menu(e, True))
     if os_name == "Darwin":
         parent.bind("<Control-Button-1>", show_context_menu) # Command + 鼠标左键

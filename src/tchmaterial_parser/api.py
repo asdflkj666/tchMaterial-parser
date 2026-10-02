@@ -34,10 +34,29 @@ def get_relative_dir(resource_data: dict) -> tuple[str, ...]:
             names[dimension] = tag["tag_name"]
     return tuple(names[dimension] for dimension in TAG_DIMENSIONS if dimension in names)
 
+def resolve_title(title_data: object, *fallbacks: object) -> str:
+    """取出资源标题，保证返回非空字符串。
+
+    `global_title` 可能是多语言字典（如 {"zh-CN": "…"}），也可能直接是字符串。平台数据
+    并不保证字典里一定有 zh-CN/en 键，所以逐个回退，最后用调用方给的兜底字段（标题、id）。
+    以前这里写成 `A or B if C else D or E` 的一行表达式，读起来极易误判优先级，且缺键时
+    会返回 None，最终在拼接文件名时抛 AttributeError、被吞成「该链接无法解析」。
+    """
+    if isinstance(title_data, dict):
+        candidates = [title_data.get("zh-CN"), title_data.get("en"), *title_data.values()]
+    else:
+        candidates = [title_data]
+    for candidate in [*candidates, *fallbacks]:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate
+    return ""
+
 def combine_resource_title(root_title: str | None, resource_title: str) -> str:
     """组合专题标题与实际资源标题，并避免平台重复标题造成超长文件名。"""
     if not root_title:
         return resource_title
+    if not resource_title: # 子资源没有可用标题时只保留专题标题，避免拼出 “标题 - ”
+        return root_title
 
     # 例如 “体育与健康教师用书 基本运动技能（全一册）” 的专题父记录与内部 PDF 标题相同；
     # 先折叠连续空白再比较，命中时保留子资源原文，避免生成 “标题 - 标题” 的超长文件名。
@@ -144,9 +163,7 @@ def parse(url: str, bookmarks: bool) -> list[ResourceInfo] | None: # 解析资�
 
         # 3. 获取资源标题、下载链接及章节目录
         def get_resource_info(resource_data: dict, root_title: str | None = None, edition: str | None = None) -> ResourceInfo | None:
-            title_data = resource_data.get("global_title")
-            resource_title: str = title_data.get("zh-CN") or title_data.get("en") if isinstance(title_data, dict) else title_data or resource_data.get("title") or resource_data.get("id")
-            title = combine_resource_title(root_title, resource_title)
+            title = combine_resource_title(root_title, resolve_title(resource_data.get("global_title"), resource_data.get("title"), resource_data.get("id")))
             resource_url: str | None = None
             resource_format = "pdf"
 
@@ -272,10 +289,8 @@ def parse(url: str, bookmarks: bool) -> list[ResourceInfo] | None: # 解析资�
             )
 
         def get_audio_info(audio_data: dict, root_title: str | None = None, edition: str | None = None) -> ResourceInfo | None: # 解析教材关联的音频资源（如英语教材听力）
-            # 音频资源的标题存放在 global_title 字典中（键为语言代码，如 zh-CN）
-            title_data = audio_data.get("global_title")
-            audio_title: str = title_data.get("zh-CN") or title_data.get("en") if isinstance(title_data, dict) else title_data or audio_data.get("title") or audio_data.get("id")
-            title = combine_resource_title(root_title, audio_title)
+            # 音频资源的标题同样可能存放在 global_title 字典中（键为语言代码，如 zh-CN）
+            title = combine_resource_title(root_title, resolve_title(audio_data.get("global_title"), audio_data.get("title"), audio_data.get("id")))
             resource_url: str | None = None
             resource_format = "mp3"
 

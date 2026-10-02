@@ -20,10 +20,11 @@ def resource_path(*parts: str) -> Path: # 获取源码或 PyInstaller 打包后�
 
 os_name = platform.system() # 获取操作系统类型
 if os_name == "Windows": # 在 Windows 操作系统下，导入 Windows 相关库
+    import ctypes, winreg # 标准库，Windows 上必然可用，不能因为 pywin32 缺失而被一起置空
     try:
-        import win32print, win32gui, win32con, win32api, ctypes, winreg
+        import win32print, win32gui, win32con, win32api
     except Exception as e:
         print_error(e)
-        win32print = win32gui = win32con = win32api = ctypes = winreg = None
+        win32print = win32gui = win32con = win32api = None
 else:
     win32print = win32gui = win32con = win32api = ctypes = winreg = None

@@ -63,7 +63,7 @@ class RequestTimeoutTest(unittest.TestCase):
         bad = "https://basic.smartedu.cn/tchMaterial/detail?contentId=bad"
         good = "https://basic.smartedu.cn/tchMaterial/detail?contentId=good"
         completed = Mock()
-        with patch.object(api, "session", self.session), patch.object(api, "print_error"), patch.object(download_panel, "progress_label", Mock(), create=True), patch.object(download_panel, "download_states", []), patch.object(download_panel, "thread_it", lambda fn: fn()), patch.object(download_panel, "ui_call", lambda fn, *args, **kwargs: fn(*args, **kwargs)):
+        with patch.object(api, "session", self.session), patch.object(api, "print_error"), patch.object(download_panel.widgets, "progress_label", Mock()), patch.object(download_panel, "download_states", []), patch.object(download_panel, "thread_it", lambda fn: fn()), patch.object(download_panel, "ui_call", lambda fn, *args, **kwargs: fn(*args, **kwargs)):
             download_panel.parse_urls_in_background([bad, good], False, completed)
 
         completed.assert_called_once()

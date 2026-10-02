@@ -2,103 +2,102 @@
 
 <img src="./assets/logo.png" alt="tchMaterial-parser Logo" width="128" />
 
-# tchMaterial-parser
+# tchMaterial-parser（增强分支）
 
 **[国家中小学智慧教育平台](https://basic.smartedu.cn/) [电子课本](https://basic.smartedu.cn/tchMaterial/)下载工具**
 
-一键解析并批量下载电子课本文件，自动命名、自动添加书签，开箱即用。
+在[原版](https://github.com/happycola233/tchMaterial-parser)基础上，增强了批量下载遇到限流与坏资源时的容错能力。
 
-<br />
+<sub>基于原项目 **v4.3** 源码修改，原版的下载、解析、书签等功能完整保留。</sub>
 
-[![GitHub Release](https://img.shields.io/github/v/release/happycola233/tchMaterial-parser?style=flat-square&color=4c8bf5&logo=github)](../../releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/happycola233/tchMaterial-parser/total?style=flat-square&color=4c8bf5&label=downloads)](../../releases)
-[![Stars](https://img.shields.io/github/stars/happycola233/tchMaterial-parser?style=flat-square&color=f5a623)](../../stargazers)
 [![Python Version](https://img.shields.io/badge/Python-3.10+-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=flat-square)](../../releases)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey?style=flat-square)](#-下载与安装方法)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
-[![Trendshift](https://trendshift.io/api/badge/repositories/13774)](https://trendshift.io/repositories/13774)
-
-感谢每一位使用者与贡献者，本项目于 2025 年 5 月登上 **GitHub Trending 总榜第 3 名**（单日新增约 400 Stars），并获得 [**Trendshift Python 日榜第 3 名**](https://trendshift.io/repositories/13774) 🎉
-
-[📥 下载安装](#-下载与安装方法) · [🛠️ 使用方法](#️-使用方法) · [❓ 常见问题](#-常见问题) · [🐛 反馈问题](../../issues)
+[🆕 改了什么](#-相对原版的改动) · [📥 安装](#-下载与安装方法) · [🛠️ 使用方法](#️-使用方法) · [❓ 常见问题](#-常见问题)
 
 </div>
 
 ---
 
-<div align="center">
+> [!CAUTION]
+> **⚠️ 本分支的代码全部由 AI 生成。**
+> **为了你的生命安全，请不要自己阅读这些代码**——需要看代码时，请交给 AI 看。
+> 若你坚持人工阅读，请自行承担头晕、胸闷，以及「这写的什么玩意儿」的风险。😄
 
-<img src="./docs/images/main.png" alt="浅色模式下的工具截图" width="48%" />
-<img src="./docs/images/main_dark.png" alt="深色模式下的工具截图" width="48%" />
+---
 
-<sub>☀️ 浅色模式（左） &nbsp;·&nbsp; 🌙 深色模式（右）</sub>
+## 📌 关于本分支
 
-</div>
+这是 [happycola233/tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 的**个人增强分支**，源码取自原项目 **v4.3**，用于「一次下载几百本、经常撞上平台限流」的场景。
 
-## 📖 目录
+原版在批量下载时有个难受的地方：一旦被平台限流或因某个资源不可用而失败，程序会一个个失败过去，刷出一整屏错误，还会反复重试同一个根本下不动的文件，把限流打得更死。
 
-- [✨ 工具特点](#-工具特点)
-- [📥 下载与安装方法](#-下载与安装方法)
-- [🛠️ 使用方法](#️-使用方法)
-- [❓ 常见问题](#-常见问题)
-- [⭐ Star History](#-star-history)
-- [🤝 贡献指南](#-贡献指南)
-- [⚖️ 免责声明](#️-免责声明)
-- [📜 许可证](#-许可证)
+本分支只针对这一环做增强，**不改动原有功能与界面结构**。
+
+## 🆕 相对原版的改动
+
+| 改动 | 说明 |
+| :-- | :-- |
+| 🛡️ **限流熔断** | 短时间内有多个「不同文件」下载失败时判定为限流，自动暂停一段时间（默认 3 分钟，连续触发逐次翻倍、封顶 30 分钟），冷却结束后自动继续。单个文件反复失败不会误触发。 |
+| 🔍 **失败自动定性（探针）** | 某个文件失败时，先跳过它继续下载其他文件：若其他文件仍能正常下载，说明是该文件自身不可用，直接列入失败清单、不再重试；若其他文件也失败，才判定为限流，冷却后重试一次。**任何文件单次任务内最多下载 2 次**，杜绝「一直重试一直下不了」。 |
+| ⏸️ **暂停 / 继续** | 暂停时，正在下载的文件会先下载完成，之后不再开始新任务；已下载进度保留，点“继续”即可恢复。 |
+| ⛔ **取消全部** | 中断整批任务：未开始的不再启动，正在传输的在分块处中断并清理临时文件，已下载完成的文件不受影响。 |
+| 📋 **下载日志** | 界面右下角实时记录每个文件的结果、失败原因（含 HTTP 状态码的中文解释）、限流判定依据与冷却倒计时。 |
+| ⚙️ **下载设置** | 并发下载数、请求最小间隔、限流触发阈值、冷却时长、疑似限流文件重试次数、400 重试次数、下载超时共 7 项参数，可在界面调整并保存到本机。 |
+
+> [!NOTE]
+> 本分支目前**只以源码方式提供**，没有预编译安装包。原项目发布的安装包**不含**上述增强功能。
 
 ## ✨ 工具特点
 
+### 本分支新增
+
+- 🛡️ **限流自动保护**：见上表，遇到限流自动等待、冷却后继续，不再刷屏报错。
+- 🔍 **失败原因自动判定**：自动区分「这个文件下不动」和「被平台限流了」，处理方式不同。
+- 📋 **下载日志**：失败原因、判定依据、冷却倒计时一目了然。
+- ⏸️ **可暂停与取消**：批量任务随时可控。
+- ⚙️ **下载技术设置**：把并发、间隔、阈值等参数暴露到界面，可按自己的网络情况调整。
+
+### 原版已有
+
 - 📚 **支持批量下载**：一次输入多个电子课本预览页面网址，即可批量下载电子课本文件。
-- 📂 **自动命名文件**：工具会自动使用电子课本的名称作为默认文件名，方便管理下载的课本文件。
-- 🔖 **自动添加书签**：若开启 “添加 PDF 书签”，则会在下载完成后为电子课本添加书签，在查看 PDF 时可更方便地跳转到指定位置。
-- 🔑 **支持 Access Token**：支持用户[手动输入 Access Token](#2--设置-access-token可选) 并自动保存，下次启动可自动加载。
-- 🔎 **资源快速搜索**：可按资源名称或 “学段、学科、年级” 等分类组合搜索，结果会自动展开；长名称支持横向滚动，悬停时可查看完整信息和大尺寸封面。
-- 🖥️ **高 DPI 适配**：优化 UI 以适配高分辨率屏幕，避免界面模糊问题。
-- 🌗 **深色模式**：启动时自动跟随系统的浅色/深色模式，也可点击右上角的按钮手动切换，切换结果会被记住。
-- 💻 **跨平台支持**：支持 Windows、Linux、macOS 等操作系统（需要图形界面）。
+- 📂 **自动命名文件**：自动使用电子课本的名称作为默认文件名，并按“学段／学科／版本”分类存放。
+- 🔖 **自动添加书签**：开启 “添加 PDF 书签” 后，会在下载完成后为电子课本添加书签，查看 PDF 时可快速跳转。
+- 🔑 **支持 Access Token**：支持[手动输入 Access Token](#2--设置-access-token可选) 并自动保存，下次启动自动加载。
+- 🔎 **资源快速搜索**：可按资源名称或 “学段、学科、年级” 等分类组合搜索。
+- 🖥️ **高 DPI 适配**：优化 UI 以适配高分辨率屏幕。
+- 🌗 **深色模式**：跟随系统，也可手动切换并记住选择。
+- 💻 **跨平台支持**：Windows、Linux、macOS（需要图形界面）。
 
 ## 📥 下载与安装方法
 
-| 方式 | 适用平台 | 获取途径 |
-| :-- | :-- | :-- |
-| [🐙 **GitHub Releases**](#github-releases) | Windows / Linux / macOS（x86_64、Arm64） | [前往 Releases 页面](../../releases) |
-| [📦 **WinGet**](#winget) | Windows 10 / 11 / Server 2025 | `winget install tchMaterial-parser` |
-| [🐧 **AUR**](#arch-用户软件仓库aur) | Arch Linux | `yay -S tchmaterial-parser` |
-| [🐍 **从源码运行**](#从源码运行) | 任意平台（需 Python 3.10+） | [见下文](#从源码运行) |
-
-### GitHub Releases
-
-本项目的 [GitHub Releases 页面](../../releases)会发布适用于 **Windows、Linux、macOS** 的 **x86_64、Arm64** 架构的程序。
-
-下载完成之后不需要额外的安装步骤。Windows 和 Linux 可直接运行本程序。
-
-> [!WARNING]
-> 在 macOS 操作系统中，由于没有签名，系统会报告文件已被损坏，因此需要先运行 `xattr -cr /path/to/tchMaterial-parser.app` 来移除应用的 “隔离” 属性。为了保证 Access Token 的持久化，建议将应用移动到 `/Applications` 目录下再运行。
-
-### WinGet
-
-在 **Windows 10、Windows 11 与 Windows Server 2025** 上，您可以直接在终端中输入以下命令来安装本程序：
-
-```batch
-winget install happycola233.tchMaterial-parser
-```
-
-感谢 [@PtJade-Ceramic](https://github.com/PtJade-Ceramic) 的建议（[#64](../../issues/64)）！
-
-### Arch 用户软件仓库（AUR）
-
-对于 **Arch Linux** 操作系统，本程序已发布至 [Arch 用户软件仓库](https://aur.archlinux.org/packages/tchmaterial-parser)，因此您可以在终端中输入以下命令来安装本程序：
+本分支没有预编译包，**唯一推荐方式是从源码运行**（需 Python 3.10+，且需带 Tkinter 的发行版）：
 
 ```sh
-yay -S tchmaterial-parser
+# 进入源码目录后安装依赖（会自动装好 sv-ttk、requests、pypdf 等）
+python -m pip install .
+
+# 启动
+python ./src/main.py
 ```
 
-感谢 [@iamzhz](https://github.com/iamzhz) 为本工具制作了发行包（[#26](../../issues/26)）！
+> [!NOTE]
+> - 本工具使用 **Tkinter** 构建图形界面。Windows 与 macOS 的官方 Python 通常已自带，而部分 Linux 发行版需要单独安装，例如在 Debian/Ubuntu 上执行 `sudo apt install python3-tk`。
+> - 精简安装的 Linux 系统可能缺少中文字体与 Emoji 字体，界面上会出现方框，可按需安装，例如 `sudo apt install fonts-noto-cjk fonts-noto-color-emoji`。
 
-### 从源码运行
+### 想用安装包？请去原项目
 
-若您想体验最新的改动，或是希望参与开发，可以直接从源码运行本工具，详见[贡献者指南](./CONTRIBUTING.md#本地开发)。
+原项目为 **Windows / Linux / macOS**（x86_64、Arm64）提供预编译程序，也支持 WinGet 与 AUR：
+
+| 方式 | 获取途径 |
+| :-- | :-- |
+| 🐙 GitHub Releases | [happycola233/tchMaterial-parser/releases](https://github.com/happycola233/tchMaterial-parser/releases) |
+| 📦 WinGet（Windows） | `winget install happycola233.tchMaterial-parser` |
+| 🐧 AUR（Arch Linux） | `yay -S tchmaterial-parser` |
+
+> [!WARNING]
+> 上述安装包均由**原项目**发布，**不包含本分支的增强功能**。若你需要限流保护、暂停/取消、下载日志与下载设置，请按上面的方式从源码运行本分支。
 
 ## 🛠️ 使用方法
 
@@ -171,6 +170,17 @@ https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&content
 
 </div>
 
+### 4. 🛡️ 限流保护、暂停与下载日志
+
+批量下载大量文件时，平台可能会限制请求速度。本分支内置了相应的保护机制，无需额外配置：
+
+- **单个文件失败会自动放过**：某个文件下载失败时，工具会立即继续下载下一个文件，不会卡在原处反复重试。
+- **自动区分「文件问题」与「限流」**：若失败后其他文件仍能正常下载，说明是该文件自身不可用，工具会直接把它列入失败清单；若其他文件也接连失败，则判定为被限流，自动暂停一段时间（连续触发会逐次延长，最长 30 分钟），冷却结束后继续下载，并对这些文件重试一次。
+- **可随时暂停或取消**：点击 “暂停” 后，正在下载的文件会先下载完成，之后不再开始新任务（已下载的进度会被保留）；点击 “继续” 恢复。点击 “取消” 则中断整批任务（正在传输的文件会被中断并清理临时文件，已下载完成的文件不受影响）。
+- **下载日志**：界面右下方的 “下载日志” 会实时记录每个文件的完成/失败情况、失败原因（含 HTTP 状态码的中文解释）、限流判定依据与冷却倒计时，方便您判断问题出在哪里。
+
+若默认参数不适合您的网络环境，可点击 “**下载设置**” 调整并发下载数、请求间隔、限流判定阈值、冷却时长、失败重试次数等参数，修改会保存在本机并立即生效。
+
 ## ❓ 常见问题
 
 <details open>
@@ -182,23 +192,38 @@ https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&content
 - 如果您设置了 Access Token，由于其具有时效性（一般为 7 天），因此极有可能是 **Access Token 过期了**，请重新获取新的 Access Token。
 - **确认网络连接是否正常**🌐，有时网络不稳定可能导致下载失败。
 - **确保输入的网址有效**🔗，部分旧资源可能已被移除。
+- 请查看界面右下方的 “**下载日志**”，其中的失败原因（含 HTTP 状态码的中文解释）会说明是哪种问题。
 
 </details>
 
 <details>
-<summary><b>2. 💾 Access Token 保存在哪里？</b></summary>
+<summary><b>2. 📋 下载日志里的提示分别是什么意思？</b></summary>
+
+<br />
+
+- **“资源不可用，已跳过重试”**：该文件失败时，其他文件仍能正常下载，说明平台运行正常，是这份资源自身不可用（例如已被下架），工具不会再浪费时间重试。
+- **“疑似限流，重试后仍失败”**：失败时其他文件也无法下载，判定为被平台限流；工具已暂停等待并重试过一次，仍未成功。
+- **“[限流] … 暂停 X 分 Y 秒后自动继续”**：短时间内有多个不同文件下载失败，工具已自动暂停以避开限流，倒计时结束后会继续下载。
+- **HTTP 状态码含义**：`400` 请求无效（多为限流或地址失效）、`401` 未登录或登录已过期、`403` 无权限访问、`404` 资源不存在、`429` 请求过于频繁（限流）、`5xx` 平台服务器暂时异常。
+
+</details>
+
+<details>
+<summary><b>3. 💾 Access Token 保存在哪里？</b></summary>
 
 <br />
 
 - **Windows**：Token 会存储在**注册表** `HKEY_CURRENT_USER\Software\tchMaterial-parser` 项中的 `AccessToken` 值。
 - **Linux**：Token 会存储在**文件** `~/.config/tchMaterial-parser/data.json` 中。
 - **macOS**：Token 会存储在**文件** `~/Library/Application Support/tchMaterial-parser/data.json` 中。
-- **其他操作系统**：目前暂不支持持久化，目前我们正在寻找通用的解决方案。
+- **其他操作系统**：目前暂不支持持久化。
+
+> 下载设置（并发、间隔、阈值等）与 Token 保存在同一位置。
 
 </details>
 
 <details>
-<summary><b>3. 🔐 Token 会不会泄露？</b></summary>
+<summary><b>4. 🔐 Token 会不会泄露？</b></summary>
 
 <br />
 
@@ -207,31 +232,11 @@ https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&content
 
 </details>
 
-## ⭐ Star History
+## 🤝 反馈与上游
 
-<div align="center">
-<a href="https://www.star-history.com/?repos=happycola233%2FtchMaterial-parser&type=date&legend=top-left">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&theme=dark&legend=top-left&sealed_token=lp-dz0jwomojnfZdkKWtPYjxu2cIaluD151Uh_sKuhgbIy1MAw4WMMHg9KPtHrdNSur9Z6j6P4cR0NAR7-8vT_ttSDIBynMuDVy5ljc73IMV_4RAyLzs1GtoC6yH3QNnQtQahl8r9J2REXs-NNJ7Pu55SQ2X52m6JNy5v91zdGypyXAi758su9beu7pb" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&legend=top-left&sealed_token=lp-dz0jwomojnfZdkKWtPYjxu2cIaluD151Uh_sKuhgbIy1MAw4WMMHg9KPtHrdNSur9Z6j6P4cR0NAR7-8vT_ttSDIBynMuDVy5ljc73IMV_4RAyLzs1GtoC6yH3QNnQtQahl8r9J2REXs-NNJ7Pu55SQ2X52m6JNy5v91zdGypyXAi758su9beu7pb" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&legend=top-left&sealed_token=lp-dz0jwomojnfZdkKWtPYjxu2cIaluD151Uh_sKuhgbIy1MAw4WMMHg9KPtHrdNSur9Z6j6P4cR0NAR7-8vT_ttSDIBynMuDVy5ljc73IMV_4RAyLzs1GtoC6yH3QNnQtQahl8r9J2REXs-NNJ7Pu55SQ2X52m6JNy5v91zdGypyXAi758su9beu7pb" />
- </picture>
-</a>
-</div>
+本分支为个人自用而改，**不接受 Issue 与 Pull Request**。若您遇到的是解析、下载、书签等原版功能的问题，请到[原项目](https://github.com/happycola233/tchMaterial-parser/issues)反馈；若您也想改，直接 fork 源码即可，欢迎参考 `AGENTS.md` 中的下载与限流约定。
 
-## 🤝 参与贡献
-
-如果您发现 Bug 或有改进建议，欢迎提交 **[Issue](../../issues)** 或 **[Pull Request](../../pulls)**，让我们一起完善本工具！
-
-参与开发前，建议先阅读[贡献者指南](./CONTRIBUTING.md)，了解本地开发、测试检查、Pull Request 与合规边界说明。
-
-感谢所有为本项目做出贡献的朋友：
-
-<div align="center">
-<a href="https://github.com/happycola233/tchMaterial-parser/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=happycola233/tchMaterial-parser" alt="Contributors" />
-</a>
-</div>
+原项目由 [@happycola233](https://github.com/happycola233) 及众多贡献者开发维护，本分支的绝大部分代码来自他们。也感谢 [@PtJade-Ceramic](https://github.com/PtJade-Ceramic)（WinGet 分发建议）与 [@iamzhz](https://github.com/iamzhz)（AUR 发行包）。
 
 ## ⚖️ 免责声明
 
@@ -242,14 +247,10 @@ https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&content
 
 ## 📜 许可证
 
-本项目基于 [MIT 许可证](LICENSE)，欢迎自由使用和二次开发。
+本分支与原项目一样基于 [MIT 许可证](LICENSE)，版权归原项目作者及贡献者所有，欢迎自由使用和二次开发。
 
 本项目使用了 [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) 中的部分图片资源，按照 [MIT 许可证](./licenses/Microsoft-Fluent-Emoji.txt)授权使用。
 
 ## 💌 友情链接
 
 - 📚 您也可以在 [ChinaTextbook](https://github.com/TapXWorld/ChinaTextbook) 项目中下载归档的电子课本 PDF。
-
-<div align="center">
-<sub>如果这个工具对您有帮助，欢迎点一个 ⭐ Star 支持一下！</sub>
-</div>

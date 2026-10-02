@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from .platform_utils import os_name, print_error, resource_path
+from .platform_utils import os_name, resource_path
 
 def color_emoji_font_paths() -> list[Path]: # 获取当前系统可能存在的彩色 Emoji 字体
     candidates: list[Path] = []
@@ -88,7 +88,7 @@ def render_system_emoji(symbol: str, icon_size: int) -> Image.Image | None: # �
                 icon = Image.new("RGBA", (icon_size, icon_size), (0, 0, 0, 0))
                 icon.alpha_composite(resized, ((icon_size - resized.width) // 2, (icon_size - resized.height) // 2))
                 return icon
-            except Exception as e:
+            except Exception: # 该字体渲染失败时尝试下一个候选字体
                 continue
     return None
 

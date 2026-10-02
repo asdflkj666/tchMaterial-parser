@@ -8,7 +8,9 @@
 # 不要把 refresh_token 写入配置。旧用户可能只有 AccessToken 注册表值，加载时 mac_key 为空是正常的。
 
 import json, os
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from .auth import TokenCredentials, parse_token_input
 from .network import headers
@@ -24,7 +26,101 @@ CONFIG_KEYS = { # 配置项名称到注册表值名称的映射（JSON 文件直
     "mac_key": "MacKey",
     "token_diff": "TokenDiff",
     "theme": "Theme",
+    "download_workers": "DownloadWorkers",
+    "min_request_interval": "MinRequestInterval",
+    "circuit_threshold": "CircuitThreshold",
+    "cooldown_seconds": "CooldownSeconds",
+    "retry_rounds": "RetryRounds",
+    "http400_retries": "Http400Retries",
+    "download_timeout": "DownloadTimeout",
 }
+
+class DownloadSettingSpec(NamedTuple):
+    """一项下载技术配置的元数据：默认值、取值范围与界面展示信息。"""
+
+    key: str
+    label: str
+    default: int | float
+    minimum: int | float
+    maximum: int | float
+    integer: bool = False
+    unit: str = ""
+    description: str = ""
+
+DOWNLOAD_SETTING_SPECS: tuple[DownloadSettingSpec, ...] = (
+    DownloadSettingSpec("download_workers", "并发下载数", 3, 1, 6, True, "个", "同时下载的文件数量。私有 CDN 对并发敏感，过大易触发限流。"),
+    DownloadSettingSpec("min_request_interval", "请求最小间隔", 0.2, 0.1, 2.0, False, "秒", "两次请求之间的最小等待时间。"),
+    DownloadSettingSpec("circuit_threshold", "限流触发阈值", 3, 2, 10, True, "个文件", "60 秒内有这么多个“不同文件”下载失败时，判定为限流并进入冷却（同一文件反复失败只算一次）。"),
+    DownloadSettingSpec("cooldown_seconds", "冷却时长", 180, 30, 1800, True, "秒", "判定限流后整批暂停的基准时长；连续触发会自动翻倍（上限 30 分钟）。"),
+    DownloadSettingSpec("retry_rounds", "疑似限流文件末尾重试次数", 1, 0, 3, True, "次", "批次末尾对“疑似限流”的失败文件再重试的次数；若失败时别的文件能正常下载，则判定为文件自身问题，不会重试。"),
+    DownloadSettingSpec("http400_retries", "400 错误重试次数", 2, 0, 5, True, "次", "同一地址遇到 400 时的退避重试次数（换镜像前）。"),
+    DownloadSettingSpec("download_timeout", "下载数据超时", 60, 10, 300, True, "秒", "等待服务器发送下一段数据的最大时长。"),
+)
+
+CIRCUIT_FAILURE_WINDOW = 60.0 # 限流失败的统计窗口（秒）
+COOLDOWN_MAX_SECONDS = 1800 # 冷却时长递增的封顶（秒）
+COOLDOWN_ESCALATION_RESET = 600.0 # 距上次触发超过该时长（秒）后，冷却倍数重新从 1 开始
+
+download_settings: dict[str, int | float] = {spec.key: spec.default for spec in DOWNLOAD_SETTING_SPECS}
+
+# 下载设置变更后的回调。由 app 层把 config 与下载模块接起来，
+# 这样设置窗口只需要写 config，不必反过来依赖下载面板。
+_download_settings_listeners: list[Callable[[], None]] = []
+
+def on_download_settings_changed(listener: Callable[[], None]) -> None:
+    """注册一个在下载设置保存成功后调用的回调（重复注册同一函数不会重复添加）。"""
+    if listener not in _download_settings_listeners:
+        _download_settings_listeners.append(listener)
+
+def _parse_setting_value(spec: DownloadSettingSpec, raw: str) -> int | float:
+    """把字符串形式的配置值解析为数字并校验范围；不合法时抛出 ValueError。"""
+    text = raw.strip()
+    if not text:
+        raise ValueError(f"“{spec.label}”不能为空。")
+    try:
+        value: float = float(text)
+    except ValueError:
+        raise ValueError(f"“{spec.label}”必须是数字。") from None
+    if value != value or value in (float("inf"), float("-inf")): # 排除 nan / inf
+        raise ValueError(f"“{spec.label}”必须是有效数字。")
+    if spec.integer and value != int(value):
+        raise ValueError(f"“{spec.label}”必须是整数。")
+    value = int(value) if spec.integer else value
+    if value < spec.minimum or value > spec.maximum:
+        unit = f" {spec.unit}" if spec.unit else ""
+        raise ValueError(f"“{spec.label}”需在 {spec.minimum} 到 {spec.maximum}{unit} 之间。")
+    return value
+
+def load_download_settings(saved_config: dict[str, str]) -> None:
+    """从已读取的配置中解析下载技术配置；缺失或非法时保留默认值。"""
+    for spec in DOWNLOAD_SETTING_SPECS:
+        raw = saved_config.get(spec.key)
+        if raw is None:
+            continue
+        try:
+            download_settings[spec.key] = _parse_setting_value(spec, raw)
+        except ValueError as error:
+            print_error(error)
+
+def set_download_settings(values: dict[str, str]) -> str:
+    """校验并保存全部下载技术配置，成功后立即生效。"""
+    parsed: dict[str, int | float] = {}
+    for spec in DOWNLOAD_SETTING_SPECS:
+        raw = values.get(spec.key)
+        if raw is None:
+            raise ValueError(f"缺少配置项 “{spec.label}”。")
+        parsed[spec.key] = _parse_setting_value(spec, str(raw))
+
+    save_config(**{key: str(value) for key, value in parsed.items()})
+    download_settings.update(parsed)
+    for listener in _download_settings_listeners: # 通知下载模块同步派生参数
+        listener()
+    return "下载设置已保存，将在之后的下载中生效。\n" + config_location()
+
+def reset_download_settings() -> dict[str, int | float]:
+    """恢复全部下载技术配置的默认值（只改内存，不落盘；由设置窗口回填后再保存）。"""
+    defaults = {spec.key: spec.default for spec in DOWNLOAD_SETTING_SPECS}
+    return defaults
 
 def config_file_path() -> Path | None: # 获取配置文件路径
     if os_name == "Windows": # 在 Windows 上，配置存放于 %LOCALAPPDATA%\tchMaterial-parser\data.json（此处为备用）
@@ -49,7 +145,7 @@ def config_location() -> str: # 获取配置存放位置的描述文本，用于
         return "本工具尚未支持该操作系统下 Access Token 的持久化，下次启动时仍需手动输入 Access Token。"
 
 def load_config() -> dict[str, str]: # 读取本地存储的配置
-    config: dict[str, str] = {}
+    loaded: dict[str, str] = {}
 
     if os_name == "Windows": # 在 Windows 上，从注册表读取
         try:
@@ -62,8 +158,8 @@ def load_config() -> dict[str, str]: # 读取本地存储的配置
                     if not isinstance(value, str):
                         print_error(TypeError(f"配置项 {name} 必须是字符串"))
                         continue
-                    config[name] = value
-            return config
+                    loaded[name] = value
+            return loaded
         except FileNotFoundError: # 注册表键不存在，即从未保存过配置
             return {}
         except Exception as e:
@@ -86,8 +182,8 @@ def load_config() -> dict[str, str]: # 读取本地存储的配置
             if not isinstance(value, str):
                 print_error(TypeError(f"配置项 {name} 必须是字符串"))
                 continue
-            config[name] = value
-        return config
+            loaded[name] = value
+        return loaded
     except Exception as e:
         print_error(e)
         return {}
@@ -119,11 +215,12 @@ def apply_credentials(credentials: TokenCredentials) -> None:
     token_diff = credentials.diff
     apply_static_headers()
 
-def load_access_token(config: dict[str, str]) -> None: # 从已读取的配置中加载登录凭据
-    token = config.get("access_token") or ""
-    stored_mac = config.get("mac_key") or ""
+def load_access_token(saved_config: dict[str, str]) -> None: # 从已读取的配置中加载登录凭据
+    # 参数不要叫 config，避免在模块内部遮蔽模块名
+    token = saved_config.get("access_token") or ""
+    stored_mac = saved_config.get("mac_key") or ""
     try:
-        stored_diff = int(config.get("token_diff") or 0)
+        stored_diff = int(saved_config.get("token_diff") or 0)
     except ValueError:
         stored_diff = 0
     apply_credentials(TokenCredentials(token, stored_mac or None, stored_diff))

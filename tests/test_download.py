@@ -65,22 +65,33 @@ class DownloadFailureTest(unittest.TestCase):
         return download_panel.download_states[0]["failed_reason"]
 
     def test_reports_server_errors_unrelated_to_the_token(self) -> None:
-        self.assertEqual(self.failure_reason(404), "服务器返回 HTTP 状态码 404")
+        self.assertEqual(
+            self.failure_reason(404),
+            "服务器返回 HTTP 状态码 404（资源不存在：该文件可能已从平台下架）",
+        )
+
+    def test_explains_status_codes_in_chinese(self) -> None:
+        # 用户可能不认识状态码，日志与提示都要给出中文解释
+        self.assertEqual(download_panel.status_hint(429), "请求过于频繁：已被平台限流")
+        self.assertEqual(download_panel.status_hint(403), "无权限访问该资源")
+        self.assertEqual(download_panel.status_hint(501), "平台服务器暂时异常") # 未逐条列举的 5xx
+        self.assertIsNone(download_panel.status_hint(200))
 
     def test_appends_a_token_hint_to_authentication_failures(self) -> None:
         download_panel.config.access_token = "private-token"
-        for status_code in (401, 403):
+        expected = {
+            401: "服务器返回 HTTP 状态码 401（未登录或登录已过期），Access Token 可能已过期或无效，请重新设置",
+            403: "服务器返回 HTTP 状态码 403（无权限访问该资源），Access Token 可能已过期或无效，请重新设置",
+        }
+        for status_code, text in expected.items():
             with self.subTest(status_code=status_code):
-                self.assertEqual(
-                    self.failure_reason(status_code),
-                    f"服务器返回 HTTP 状态码 {status_code}，Access Token 可能已过期或无效，请重新设置",
-                )
+                self.assertEqual(self.failure_reason(status_code), text)
 
     def test_asks_for_token_when_anonymous_request_requires_authentication(self) -> None:
         download_panel.config.access_token = None
         self.assertEqual(
             self.failure_reason(401),
-            "服务器返回 HTTP 状态码 401，该资源需要有效的 Access Token，请先设置",
+            "服务器返回 HTTP 状态码 401（未登录或登录已过期），该资源需要有效的 Access Token，请先设置",
         )
 
     def test_keeps_token_out_of_private_request_url(self) -> None:
@@ -188,6 +199,18 @@ class DownloadFailureTest(unittest.TestCase):
         _response, public_attempts = download_panel.request_download(public_url)
         self.assertEqual(public_attempts, [public_url])
 
+    def test_does_not_try_other_mirrors_for_missing_object(self) -> None:
+        """404 说明对象在三个镜像上都不存在（同一存储后端），不该再打 r2/r3。"""
+        fake_session = FakeSession(404)
+        download_panel.session = fake_session
+        url = "https://r1-ndr-private.ykt.cbern.com.cn/book.pdf"
+
+        response, attempted_urls = download_panel.request_download(url)
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(attempted_urls, [url])
+        self.assertEqual(fake_session.requested_urls, [url])
+
     def test_explains_private_storage_authentication_errors(self) -> None:
         response = FakeResponse(400, b"<Error><Code>InvalidArgument</Code></Error>")
         attempted_urls = ["https://r1.example/book.pdf", "https://r2.example/book.pdf"]
@@ -195,13 +218,13 @@ class DownloadFailureTest(unittest.TestCase):
         download_panel.config.access_token = None
         self.assertEqual(
             download_panel.download_failure_reason(response, attempted_urls),
-            "服务器返回 HTTP 状态码 400（InvalidArgument），该私有资源需要有效的 Access Token，请先设置，已尝试 2 个下载镜像",
+            "服务器返回 HTTP 状态码 400（请求无效：多为被平台限流，或该资源地址已失效）（对象存储返回 InvalidArgument），该私有资源需要有效的 Access Token，请先设置，已尝试 2 个下载镜像",
         )
 
         download_panel.config.access_token = "private-token"
         self.assertEqual(
             download_panel.download_failure_reason(response, attempted_urls),
-            "服务器返回 HTTP 状态码 400（InvalidArgument），私有资源暂时无法访问。请稍后重试；若持续失败，请重新设置 Access Token，已尝试 2 个下载镜像",
+            "服务器返回 HTTP 状态码 400（请求无效：多为被平台限流，或该资源地址已失效）（对象存储返回 InvalidArgument），私有资源暂时无法访问。请稍后重试；若持续失败，请重新设置 Access Token，已尝试 2 个下载镜像",
         )
 
     def test_redacts_token_from_network_exceptions(self) -> None:
@@ -215,6 +238,28 @@ class DownloadFailureTest(unittest.TestCase):
         self.assertNotIn(token, str(context.exception))
         self.assertIn("ndr-private.ykt.cbern.com.cn/book.pdf", str(context.exception))
         self.assertNotIn("accessToken", str(context.exception))
+
+
+class PanelWidgetsTest(unittest.TestCase):
+    def test_widgets_default_to_none(self) -> None:
+        """控件句柄未绑定时应为 None，而不是“未定义的名字”。"""
+        fresh = download_panel.PanelWidgets()
+
+        self.assertIsNone(fresh.url_text)
+        self.assertIsNone(fresh.download_btn)
+        self.assertIsNone(fresh.progress_label)
+        self.assertIsNone(fresh.pause_btn)
+        self.assertIsNone(fresh.cancel_btn)
+        self.assertIsNone(fresh.log_text)
+
+    def test_bind_widgets_fills_the_holder(self) -> None:
+        widget = FakeWidget()
+
+        download_panel.bind_widgets(widget, widget, widget, widget, widget, widget)
+
+        self.assertIs(download_panel.widgets.url_text, widget)
+        self.assertIs(download_panel.widgets.progress_label, widget)
+        self.assertIsNone(download_panel.widgets.pause_btn) # 未传入的可选控件保持 None
 
 
 if __name__ == "__main__":

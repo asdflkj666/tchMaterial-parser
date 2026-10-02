@@ -1,69 +1,62 @@
 # 贡献者指南
 
-感谢您愿意帮助改进本项目。这个项目面向**真实用户**，请尽量让每一次提交都保持清晰、可验证，并尊重国家中小学智慧教育平台及相关权利人的资源版权。
+本仓库是 [happycola233/tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 的个人 fork。
 
-## 开始之前
+> [!IMPORTANT]
+> **建议把改动交给 AI 处理。**
+> 本仓库的代码由 AI 生成与维护，人读起来的性价比很低（参见 [README](README.md) 开头的警告）。你负责提出需求、验收结果，剩下的交给 AI。
 
-- 提交问题前请**搜索**已有 [Issue](../../issues) 和 [Pull Request](../../pulls)，避免重复讨论。
-- 发现程序无法运行、下载失败或界面异常时，请提交 [**🐛 Bug 报告**](../../issues/new?template=bug_report.yml)，并按模板补全相关信息，最好**附上错误信息截图**，以方便定位问题。
-- 有新功能或改进建议时，请提交[**✨ 功能建议**](../../issues/new?template=feature_request.yml)，先说明您遇到的实际问题，再描述期望做法，这样更容易判断改动是否适合放进本项目。
-- **不要**在 Issue、Pull Request、提交信息或代码等地方公开 Access Token。
+## 交给 AI 做的事
 
-## 本地开发
+| 你想做的事 | 直接说需求即可 |
+| :-- | :-- |
+| 加功能 / 改行为 | 「改一下 xxx，我希望 …」 |
+| 排查问题 | 「下载时出现 …，看下是哪里的问题」 |
+| 跑测试与检查 | 「跑一遍测试和 flake8」 |
+| 写提交信息 | 「按 Conventional Commit 写提交消息」 |
 
-本项目使用 **Python 3.10 或更高版本**（`X | Y` 形式的类型注解仅在该版本及以后的版本可用）。
+报错信息、截图、复现步骤**原样贴过去**就行，不需要自己先定位——定位和验证本身就是 AI 的活。
 
-```sh
-# 克隆项目
-git clone https://github.com/happycola233/tchMaterial-parser.git
-cd tchMaterial-parser
+## 人来做的事
 
-# 安装依赖
-python -m pip install .
+1. **说清需求**：你遇到的实际问题，比“应该怎么实现”更有价值。
+2. **验收**：把程序跑起来点一遍，确认行为符合预期。**实际运行由人来测**，别让 AI 在沙箱里自我验证。
+3. **决定取舍**：默认值定多少、要不要打包发布、要不要引入新依赖，这类取舍由你拍板。
 
-# 启动应用
-python ./src/main.py
-```
-
-> [!NOTE]
-> 本工具使用 **Tkinter** 构建图形界面。Windows 与 macOS 的官方 Python 通常已自带，而部分 Linux 发行版需要单独安装，例如在 Debian/Ubuntu 上执行 `sudo apt install python3-tk`。
->
-> 此外，精简安装的 Linux 系统可能缺少中文字体与 Emoji 字体，此时界面上可能会出现方框等异常现象。可按需安装，例如在 Debian/Ubuntu 上执行 `sudo apt install fonts-noto-cjk fonts-noto-color-emoji`。
-
-## 测试与检查
-
-提交 Pull Request 前，请进行测试与检查：
+## 如果非要自己动手（不推荐，仅供参考）
 
 ```sh
-# 安装开发用依赖
+# 需要 Python 3.10 或更高版本
+python -m pip install .        # 安装依赖并注册包
+python ./src/main.py           # 启动程序
+
 python -m pip install pytest flake8
-
-# 运行测试与检查
-python -m pytest
-python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+python -m pytest               # 运行单元测试
+python -m flake8 . --count --select=E9,F63,F7,F82 --statistics
 ```
 
-当前 CI 的静态检查只拦截语法错误、未定义变量等确定性问题，不把代码风格与中文注释行长等作为强制门槛。
-
-格式化时请遵循仓库现有风格，如使用 **4 空格**缩进、**`snake_case`** 命名约定、字符串默认使用**双引号 `"`**、**不出现尾随空格**等。
-
-## 打包验证
-
-修改打包配置、资源文件或程序入口时，请额外验证 PyInstaller 构建：
+修改打包配置、资源文件或程序入口时，额外验证 PyInstaller 构建：
 
 ```sh
 python -m pip install pyinstaller
 pyinstaller ./tchMaterial-parser.spec
 ```
 
-构建产物位于 `dist` 目录。
+约定（AI 通常会自动遵守，人改的话请照做）：
 
-## 代码与文案约定
+- **4 空格**缩进、**`snake_case`** 命名、字符串默认用**双引号**、不出现尾随空格；
+- 保持 **Windows / Linux / macOS** 跨平台兼容；
+- 涉及 UI 的改动，同时检查**浅色与深色模式**；
+- 意图不明显的业务逻辑写**简短中文注释**，能从代码本身读懂的不要注释；
+- 校验放在**系统边界**（用户输入、文件系统、网络请求），不为理论上不可能的内部状态加兜底；
+- 改动下载/限流相关逻辑前，先读 [AGENTS.md](./AGENTS.md) 里的「下载与限流约定」。
 
-- 本工具在设计上支持 Windows、Linux、macOS 操作系统，编写代码时应确保**跨平台兼容性**。
-- 命名要**准确表达意图**；重命名变量、函数或模块时，请**同步更新**相关引用。
-- 意图不明显的业务逻辑可以添加**简洁中文注释**；能从代码本身读懂的内容一般不需要注释。
-- 不要为了理论上不可能发生的内部状态添加复杂兜底逻辑，校验应主要放在用户输入、文件系统、网络请求、外部 API 等**系统边界**。
-- 涉及 UI 的改动，需要同时检查**浅色模式与深色模式**。
-- 界面文案应直接面向**用户**，避免出现描述需求、规则或适用条件本身的元语言。
-- 修改代码后，确保代码中**未出现明文 Access Token 等敏感信息**，且已执行**必要的测试与检查**。
+## 红线
+
+- **不要公开 Access Token**：Issue、提交信息、截图、代码里都不要出现。
+- 改动仅用于个人学习与教学参考，请遵守国家中小学智慧教育平台的服务条款与资源版权。
+- 本 fork 是个人的分支，**不接受上游式的 Issue / PR 流程**；原版功能（解析、下载、书签等）的问题请到[原项目](https://github.com/happycola233/tchMaterial-parser/issues)反馈。
+
+## 上游
+
+原项目由 [@happycola233](https://github.com/happycola233) 及众多贡献者开发维护，本 fork 的绝大部分代码来自他们。
