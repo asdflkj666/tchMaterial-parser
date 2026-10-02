@@ -43,14 +43,13 @@
 - [🛠️ 使用方法](#️-使用方法)
 - [❓ 常见问题](#-常见问题)
 - [⭐ Star History](#-star-history)
-- [🤝 参与贡献](#-参与贡献)
+- [🤝 贡献指南](#-贡献指南)
 - [⚖️ 免责声明](#️-免责声明)
 - [📜 许可证](#-许可证)
-- [💌 友情链接](#-友情链接)
 
 ## ✨ 工具特点
 
-- 📚 **智能下载资源**：一次输入多个电子课本预览页面网址，即可**批量下载**文件，下载过程中会**自动跳过**已下载完成的文件，用户也可**随时停止下载**。
+- 📚 **支持批量下载**：一次输入多个电子课本预览页面网址，即可批量下载电子课本文件。
 - 📂 **自动命名文件**：工具会自动使用电子课本的名称作为默认文件名，方便管理下载的课本文件。
 - 🔖 **自动添加书签**：若开启 “添加 PDF 书签”，则会在下载完成后为电子课本添加书签，在查看 PDF 时可更方便地跳转到指定位置。
 - 🔑 **支持 Access Token**：支持用户[手动输入 Access Token](#2--设置-access-token可选) 并自动保存，下次启动可自动加载。
@@ -63,22 +62,19 @@
 
 | 方式 | 适用平台 | 获取途径 |
 | :-- | :-- | :-- |
-| [🐙 **GitHub Releases**](#github-releases) | Windows 10（Server 2019）及以上 / Linux / macOS 10.15 及以上（x86_64、Arm64） | [前往 Releases 页面](../../releases) |
+| [🐙 **GitHub Releases**](#github-releases) | Windows / Linux / macOS（x86_64、Arm64） | [前往 Releases 页面](../../releases) |
 | [📦 **WinGet**](#winget) | Windows 10 / 11 / Server 2025 | `winget install tchMaterial-parser` |
 | [🐧 **AUR**](#arch-用户软件仓库aur) | Arch Linux | `yay -S tchmaterial-parser` |
 | [🐍 **从源码运行**](#从源码运行) | 任意平台（需 Python 3.10+） | [见下文](#从源码运行) |
 
 ### GitHub Releases
 
-本项目的 [GitHub Releases 页面](../../releases)会发布适用于 **Windows 10（Server 2019）及以上、Linux、macOS 10.15 及以上**的 **x86_64、Arm64** 架构的程序。
+本项目的 [GitHub Releases 页面](../../releases)会发布适用于 **Windows、Linux、macOS** 的 **x86_64、Arm64** 架构的程序。
 
 下载完成之后不需要额外的安装步骤。Windows 和 Linux 可直接运行本程序。
 
 > [!WARNING]
 > 在 macOS 操作系统中，由于没有签名，系统会报告文件已被损坏，因此需要先运行 `xattr -cr /path/to/tchMaterial-parser.app` 来移除应用的 “隔离” 属性。为了保证 Access Token 的持久化，建议将应用移动到 `/Applications` 目录下再运行。
-
-> [!NOTE]
-> 如果您使用 Windows 7 或 8.1，您可以使用本项目的一个非官方分支 [tchMaterial-parser-for-Windows7](https://github.com/Minecraftgoose/tchMaterial-parser-for-Windows7)，这个分支使用 Python 3.8 语法。
 
 ### WinGet
 
@@ -165,9 +161,7 @@ https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&content
 
 点击 “**下载**” 按钮，工具将自动解析并下载电子课本文件。
 
-本工具支持**批量下载**，所有文件会自动按课本名称命名并保存在选定目录中。选定目录中已下载完成的同名课本会被**自动跳过**，因此重新下载整套课本时只会补齐缺失与上次失败的文件。
-
-下载过程中，可随时点击 “**停止下载**” 按钮来停止本次下载；已完成的文件会保留，未下载完的文件不会留下残缺内容。
+本工具支持**批量下载**，所有文件会自动按课本名称命名并保存在选定目录中。
 
 若您开启了 “**设置 PDF 书签**”，则本工具会在课本下载完成后自动为其添加书签，在查看 PDF 时可快速跳转到指定位置。
 
@@ -218,9 +212,9 @@ https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&content
 <div align="center">
 <a href="https://www.star-history.com/?repos=happycola233%2FtchMaterial-parser&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&theme=dark&legend=top-left&sealed_token=lp-dz0jwomojnfZdkKWtPYjxu2cIaluD151Uh_sKuhgbIy1MAw4WMMHg9KPtHrdNSur9Z6j6P4cR0NAR7-8vT_ttSDIBynMuDVy5ljc73IMV_4RAyLzs1GtoC6yH3QNnQtQahl8r9J2REXs-NNJ7Pu55SQ2X52m6JNy5v91zdGypyXAi758su9beu7pb" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&legend=top-left&sealed_token=lp-dz0jwomojnfZdkKWtPYjxu2cIaluD151Uh_sKuhgbIy1MAw4WMMHg9KPtHrdNSur9Z6j6P4cR0NAR7-8vT_ttSDIBynMuDVy5ljc73IMV_4RAyLzs1GtoC6yH3QNnQtQahl8r9J2REXs-NNJ7Pu55SQ2X52m6JNy5v91zdGypyXAi758su9beu7pb" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=happycola233/tchMaterial-parser&type=date&legend=top-left&sealed_token=lp-dz0jwomojnfZdkKWtPYjxu2cIaluD151Uh_sKuhgbIy1MAw4WMMHg9KPtHrdNSur9Z6j6P4cR0NAR7-8vT_ttSDIBynMuDVy5ljc73IMV_4RAyLzs1GtoC6yH3QNnQtQahl8r9J2REXs-NNJ7Pu55SQ2X52m6JNy5v91zdGypyXAi758su9beu7pb" />
  </picture>
 </a>
 </div>
@@ -254,9 +248,7 @@ https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&content
 
 ## 💌 友情链接
 
-- 🪟 [tchMaterial-parser-for-Windows7](https://github.com/Minecraftgoose/tchMaterial-parser-for-Windows7)：本项目的一个分支，支持 **Windows 7**，使用 Python 3.8 语法
-- 🎓 [惠窗中小学端](https://github.com/bluseliu50/huichuang_basic)：资源解析部分参考了本项目，使用 Flutter 框架编写，支持 macOS / Windows / Linux / **Android / iOS**（[CC BY-NC-SA 4.0](https://github.com/bluseliu50/huichuang_basic/blob/main/LICENSE) 许可）
-- 📚 [ChinaTextbook](https://github.com/TapXWorld/ChinaTextbook)：归档的电子课本 PDF 合集，包含小学、初中、高中和大学的各类教材
+- 📚 您也可以在 [ChinaTextbook](https://github.com/TapXWorld/ChinaTextbook) 项目中下载归档的电子课本 PDF。
 
 <div align="center">
 <sub>如果这个工具对您有帮助，欢迎点一个 ⭐ Star 支持一下！</sub>
