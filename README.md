@@ -4,6 +4,8 @@
 
 # tchMaterial-parser（增强分支）
 
+**[简体中文](README.md) · [English](README_EN.md)**
+
 **[国家中小学智慧教育平台](https://basic.smartedu.cn/) [电子课本](https://basic.smartedu.cn/tchMaterial/)下载工具**
 
 在[原版](https://github.com/happycola233/tchMaterial-parser)基础上，增强了批量下载遇到限流与坏资源时的容错能力。
