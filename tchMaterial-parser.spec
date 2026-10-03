@@ -21,7 +21,10 @@ def package_version() -> str:
     return match.group(1) if match else ""
 
 pkg_version = package_version()
-app_name = f"tchMaterial-parser-v{pkg_version}" if pkg_version else "tchMaterial-parser"
+# 产物文件名里不用 PEP 440 本地版本段的 '+'（4.3+fork.1 → 4.3-fork.1），
+# 与 GitHub tag（v4.3-fork.1）写法保持一致。
+version_label = pkg_version.replace("+", "-")
+app_name = f"tchMaterial-parser-v{version_label}" if version_label else "tchMaterial-parser"
 
 # sv-ttk 通过 Path(__file__).with_name() 加载主题文件，需把随包的 .tcl 与 .png 一并收集进来；图标文件是程序运行时读取的自有资源
 runtime_assets = [
