@@ -26,27 +26,21 @@ jobs:
         include:
           - name: Windows x64
             os: windows-latest
-            binary: tchMaterial-parser.exe
             asset: tchMaterial-parser-windows-x64.exe
           - name: Windows Arm64
             os: windows-11-arm
-            binary: tchMaterial-parser.exe
             asset: tchMaterial-parser-windows-arm64.exe
           - name: Linux x64
             os: ubuntu-latest
-            binary: tchMaterial-parser
             asset: tchMaterial-parser-linux-x64
           - name: Linux Arm64
             os: ubuntu-24.04-arm
-            binary: tchMaterial-parser
             asset: tchMaterial-parser-linux-arm64
           - name: macOS x64
             os: macos-26-intel
-            binary: tchMaterial-parser.app
             asset: tchMaterial-parser-mac-x64.zip
           - name: macOS Arm64
             os: macos-latest
-            binary: tchMaterial-parser.app
             asset: tchMaterial-parser-mac-arm64.zip
 
     steps:
@@ -71,16 +65,19 @@ jobs:
       - name: Build app with PyInstaller
         run: pyinstaller ./tchMaterial-parser.spec
 
+      # 产物文件名由 spec 从 pyproject.toml 现读并带上版本号（如 tchMaterial-parser-v4.4.exe），
+      # 所以这里用通配符匹配而不是写死文件名——改版本号时不必回来改本文件。
+      # 注意：CI 产出的资产名是“平台后缀”形式，与本地编译产物的“版本号”形式不同名，两者可共存不冲突。
       # Windows 与 Linux 构建出的是单个可执行文件，改名后直接上传
       - name: Pack app (Windows / Linux)
         if: runner.os != 'macOS'
         shell: bash
-        run: mv "dist/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
+        run: mv dist/tchMaterial-parser* "dist/${{ matrix.asset }}"
 
       # macOS 构建出的是 .app 应用包（一个目录），需用 ditto 打包为 zip 以保留资源分支与权限
       - name: Pack app (macOS)
         if: runner.os == 'macOS'
-        run: /usr/bin/ditto -c -k --keepParent -rsrc "dist/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
+        run: /usr/bin/ditto -c -k --keepParent -rsrc dist/tchMaterial-parser*.app "dist/${{ matrix.asset }}"
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2

@@ -1,10 +1,27 @@
 # -*- mode: python ; coding: utf-8 -*-
+import re
 import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files
 
 is_mac = sys.platform.startswith('darwin')
+
+def package_version() -> str:
+    """从 pyproject.toml 读取版本号，让产物文件名自动带上版本。
+
+    版本号只维护两处：pyproject.toml（程序显示用）与 version_info.txt（exe 属性用）。
+    这里现读现用，改版本时不必再改 spec；读不到就退回不带版本号的文件名。
+    """
+    try:
+        text = Path("pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+    return match.group(1) if match else ""
+
+pkg_version = package_version()
+app_name = f"tchMaterial-parser-v{pkg_version}" if pkg_version else "tchMaterial-parser"
 
 # sv-ttk 通过 Path(__file__).with_name() 加载主题文件，需把随包的 .tcl 与 .png 一并收集进来；图标文件是程序运行时读取的自有资源
 runtime_assets = [
@@ -38,7 +55,7 @@ if is_mac:
         a.scripts,
         [],
         exclude_binaries=True,
-        name='tchMaterial-parser',
+        name=app_name,
         debug=False,
         bootloader_ignore_signals=False,
         strip=True,
@@ -58,12 +75,12 @@ if is_mac:
         strip=False,
         upx=True,
         upx_exclude=[],
-        name='tchMaterial-parser',
+        name=app_name,
     )
 
     app = BUNDLE(
         coll,
-        name='tchMaterial-parser.app',
+        name=f'{app_name}.app',
         icon='assets/logo.icns',
         bundle_identifier=None,
     )
@@ -75,7 +92,7 @@ else:
         a.binaries,
         a.datas,
         [],
-        name='tchMaterial-parser',
+        name=app_name,
         debug=False,
         bootloader_ignore_signals=False,
         strip=False,
