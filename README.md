@@ -76,7 +76,7 @@
 
 ### 🪟 Windows 用户：直接下载可执行文件
 
-到 [Releases](https://github.com/asdflkj666/tchMaterial-parser/releases) 下载最新的 Windows 版可执行文件（命名形如 `tchMaterial-parser-v4.3-fork.1.exe`），双击即可运行——**单文件、免安装、无需 Python 环境**。
+到 [Releases](https://github.com/asdflkj666/tchMaterial-parser/releases) 下载最新的 Windows 版可执行文件（命名形如 `tchMaterial-parser-v4.3-fork.2.exe`），双击即可运行——**单文件、免安装、无需 Python 环境**。
 
 > [!NOTE]
 > - 该产物由维护者在本机用 PyInstaller 编译，**未经代码签名**。首次运行时 Windows SmartScreen 可能提示「未知发布者」，点「更多信息」→「仍要运行」即可。

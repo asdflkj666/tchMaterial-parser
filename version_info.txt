@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct('CompanyName', '肥宅水水呀'),
           StringStruct('FileDescription', '国家中小学智慧教育平台 资源下载工具'),
-          StringStruct('FileVersion', '4.3+fork.1'),
+          StringStruct('FileVersion', '4.3+fork.2'),
           StringStruct('InternalName', 'tchMaterial-parser'),
           StringStruct('LegalCopyright', 'Copyright © 2026 肥宅水水呀'),
-          StringStruct('OriginalFilename', 'tchMaterial-parser-v4.3-fork.1.exe'),
+          StringStruct('OriginalFilename', 'tchMaterial-parser-v4.3-fork.2.exe'),
           StringStruct('ProductName', '国家中小学智慧教育平台 资源下载工具'),
-          StringStruct('ProductVersion', '4.3+fork.1'),
+          StringStruct('ProductVersion', '4.3+fork.2'),
           StringStruct('Comments', '国家中小学智慧教育平台 资源下载工具')
         ]
       )

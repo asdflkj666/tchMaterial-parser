@@ -76,7 +76,7 @@ This fork enhances that one area only. **Existing features and the UI layout are
 
 ### 🪟 Windows: grab the executable
 
-Download the latest Windows executable from [Releases](https://github.com/asdflkj666/tchMaterial-parser/releases) — named like `tchMaterial-parser-v4.3-fork.1.exe` — and double-click it: **a single file, nothing to install, no Python needed**.
+Download the latest Windows executable from [Releases](https://github.com/asdflkj666/tchMaterial-parser/releases) — named like `tchMaterial-parser-v4.3-fork.2.exe` — and double-click it: **a single file, nothing to install, no Python needed**.
 
 > [!NOTE]
 > - The binary is built locally by the maintainer with PyInstaller and is **not code-signed**. On first launch, Windows SmartScreen may warn about an “unknown publisher” — click “More info” → “Run anyway”.
