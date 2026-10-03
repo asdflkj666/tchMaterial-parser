@@ -49,7 +49,7 @@
 | ⚙️ **下载设置** | 并发下载数、请求最小间隔、限流触发阈值、冷却时长、疑似限流文件重试次数、400 重试次数、下载超时共 7 项参数，可在界面调整并保存到本机。 |
 
 > [!NOTE]
-> 本分支目前**只以源码方式提供**，没有预编译安装包。原项目发布的安装包**不含**上述增强功能。
+> 本分支提供 **Windows x64** 的预编译可执行文件（见 [Releases](https://github.com/asdflkj666/tchMaterial-parser/releases)）；**Linux、macOS 与 Windows Arm64 只能从源码运行**。原项目发布的安装包**不含**上述增强功能。
 
 ## ✨ 工具特点
 
@@ -74,7 +74,17 @@
 
 ## 📥 下载与安装方法
 
-本分支没有预编译包，**唯一推荐方式是从源码运行**（需 Python 3.10+，且需带 Tkinter 的发行版）：
+### 🪟 Windows 用户：直接下载可执行文件
+
+到 [Releases](https://github.com/asdflkj666/tchMaterial-parser/releases) 下载最新的 Windows 版可执行文件（命名形如 `tchMaterial-parser-v4.3-fork.1.exe`），双击即可运行——**单文件、免安装、无需 Python 环境**。
+
+> [!NOTE]
+> - 该产物由维护者在本机用 PyInstaller 编译，**未经代码签名**。首次运行时 Windows SmartScreen 可能提示「未知发布者」，点「更多信息」→「仍要运行」即可。
+> - **只有 Windows x64 有预编译产物**。Linux、macOS 与 Windows Arm64 请按下一节从源码运行。
+
+### 🐍 其他平台：从源码运行
+
+需 Python 3.10+，且需带 Tkinter 的发行版：
 
 ```sh
 # 进入源码目录后安装依赖（会自动装好 sv-ttk、requests、pypdf 等）
@@ -88,7 +98,7 @@ python ./src/main.py
 > - 本工具使用 **Tkinter** 构建图形界面。Windows 与 macOS 的官方 Python 通常已自带，而部分 Linux 发行版需要单独安装，例如在 Debian/Ubuntu 上执行 `sudo apt install python3-tk`。
 > - 精简安装的 Linux 系统可能缺少中文字体与 Emoji 字体，界面上会出现方框，可按需安装，例如 `sudo apt install fonts-noto-cjk fonts-noto-color-emoji`。
 
-### 想用安装包？请去原项目
+### 需要 Linux / macOS 的成品？可以用原项目的
 
 原项目为 **Windows / Linux / macOS**（x86_64、Arm64）提供预编译程序，也支持 WinGet 与 AUR：
 
@@ -99,7 +109,7 @@ python ./src/main.py
 | 🐧 AUR（Arch Linux） | `yay -S tchmaterial-parser` |
 
 > [!WARNING]
-> 上述安装包均由**原项目**发布，**不包含本分支的增强功能**。若你需要限流保护、暂停/取消、下载日志与下载设置，请按上面的方式从源码运行本分支。
+> 上述安装包均由**原项目**发布，**不包含本分支的增强功能**（限流保护、暂停/取消、下载日志、下载设置）。要用上这些功能，请下载本分支的 Windows 版本，或按上文从源码运行本分支。
 
 ## 🛠️ 使用方法
 

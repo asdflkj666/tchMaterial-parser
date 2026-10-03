@@ -49,7 +49,7 @@ This fork enhances that one area only. **Existing features and the UI layout are
 | ⚙️ **Download settings** | Seven parameters you can tune and save locally: concurrency, minimum request interval, rate-limit threshold, cooldown length, retry count for rate-limited files, 400-retry count, and download timeout. |
 
 > [!NOTE]
-> This fork is **source-only** — there is no prebuilt binary. The installers published by the original project **do not include** any of the improvements above.
+> This fork ships a **Windows x64** prebuilt executable (see [Releases](https://github.com/asdflkj666/tchMaterial-parser/releases)). **Linux, macOS and Windows Arm64 must run from source.** The installers published by the original project **do not include** any of the improvements above.
 
 ## ✨ Features
 
@@ -74,7 +74,17 @@ This fork enhances that one area only. **Existing features and the UI layout are
 
 ## 📥 Download & install
 
-There is no prebuilt binary for this fork. **Running from source is the only supported way** (Python 3.10+ with Tkinter):
+### 🪟 Windows: grab the executable
+
+Download the latest Windows executable from [Releases](https://github.com/asdflkj666/tchMaterial-parser/releases) — named like `tchMaterial-parser-v4.3-fork.1.exe` — and double-click it: **a single file, nothing to install, no Python needed**.
+
+> [!NOTE]
+> - The binary is built locally by the maintainer with PyInstaller and is **not code-signed**. On first launch, Windows SmartScreen may warn about an “unknown publisher” — click “More info” → “Run anyway”.
+> - **Windows x64 is the only platform with a prebuilt binary.** For Linux, macOS or Windows Arm64, run from source as described below.
+
+### 🐍 Other platforms: run from source
+
+Python 3.10+ with Tkinter is required:
 
 ```sh
 # from the source directory — installs sv-ttk, requests, pypdf, etc.
@@ -89,7 +99,7 @@ python ./src/main.py
 > - Minimal Linux installations may lack Chinese and emoji fonts, which shows up as empty boxes in the UI. Install them if needed, e.g. `sudo apt install fonts-noto-cjk fonts-noto-color-emoji`.
 > - The interface itself is **in Chinese**. Button names quoted throughout this document are the literal labels you will see in the app.
 
-### Want a prebuilt binary? Use the original project
+### Need a Linux / macOS binary? Use the original project
 
 The original project ships binaries for **Windows / Linux / macOS** (x86_64 and Arm64), plus WinGet and AUR packages:
 
@@ -100,7 +110,7 @@ The original project ships binaries for **Windows / Linux / macOS** (x86_64 and 
 | 🐧 AUR (Arch Linux) | `yay -S tchmaterial-parser` |
 
 > [!WARNING]
-> Those packages are published by the **original project** and **do not include this fork's improvements**. If you want rate-limit protection, pause/cancel, the download log or download settings, run this fork from source as shown above.
+> Those packages are published by the **original project** and **do not include this fork's improvements** (rate-limit protection, pause/cancel, the download log, download settings). To get those, use this fork's Windows build or run it from source as shown above.
 
 ## 🛠️ Usage
 
