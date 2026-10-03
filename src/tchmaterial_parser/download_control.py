@@ -11,8 +11,10 @@
 #
 # 熔断判定按 **不同 URL** 去重：单个文件反复失败只算一次，只有「一批不同文件在
 # 短时间内接连失败」才视为限流。这样坏文件不会把整批拖进冷却。
-# 另外维护一个成功计数作为「探针」信号：某文件失败时记下当时的计数，
-# 若之后还有别的文件下载成功（计数增长），说明当时平台是通的，该文件是自身不可用。
+#
+# 失败定性（是限流还是文件自身不可用）不在这里做：它要看“失败在时间上的疏密”，
+# 是批次级判断，由 download_panel.classify_failures() 对全部下载状态的失败时刻聚类完成。
+# 这里只做熔断，并保证报告失败时的时间点由调用方自己记录（download_file 写 failed_at）。
 
 import threading, time
 from collections import deque
@@ -41,9 +43,6 @@ class DownloadController:
         self._trip_count = 0 # 连续触发次数，决定冷却倍数
         self._last_trip_at = 0.0
         self._failure_events: deque[tuple[str, float]] = deque() # (失败 URL, 时刻)
-        # 成功计数用作探针信号。不用时间戳是因为 Windows 上 time.monotonic() 精度约 15ms，
-        # 失败与成功可能取到相同的值，导致“失败之后是否成功过”判断错误。
-        self._success_count = 0
 
     # —— UI 线程的操作 ——————————————————————————————————————
 
@@ -71,7 +70,6 @@ class DownloadController:
             self._trip_count = 0
             self._last_trip_at = 0.0
             self._failure_events.clear()
-            self._success_count = 0
             self._cond.notify_all()
 
     # —— 状态查询 ——————————————————————————————————————————
@@ -96,20 +94,6 @@ class DownloadController:
         with self._cond:
             self._prune_failures(time.monotonic())
             return len({url for url, _ in self._failure_events})
-
-    def success_marker(self) -> int:
-        """返回当前的成功计数，供失败文件记录“失败发生时已经成功过几次”。"""
-        with self._cond:
-            return self._success_count
-
-    def has_success_since(self, marker: int) -> bool:
-        """探针信号：在 marker 之后是否有别的文件成功下载过。
-
-        有成功记录说明当时平台是通的，失败多半出在该文件自身；
-        没有则更可能是遇上限流。
-        """
-        with self._cond:
-            return self._success_count > marker
 
     # —— 下载线程的检查点 ————————————————————————————————————
 
@@ -166,10 +150,5 @@ class DownloadController:
             self._failure_events.clear()
             self._cond.notify_all() # 唤醒 wait_to_start 的线程以感知新的冷却结束时刻
             return TripInfo(distinct_failures, duration, self._trip_count)
-
-    def report_success(self) -> None:
-        """记录一次成功下载，作为探针信号。"""
-        with self._cond:
-            self._success_count += 1
 
 controller = DownloadController() # 全局唯一实例，download_panel 与 UI 共享

@@ -52,7 +52,7 @@ DOWNLOAD_SETTING_SPECS: tuple[DownloadSettingSpec, ...] = (
     DownloadSettingSpec("min_request_interval", "请求最小间隔", 0.2, 0.1, 2.0, False, "秒", "两次请求之间的最小等待时间。"),
     DownloadSettingSpec("circuit_threshold", "限流触发阈值", 3, 2, 10, True, "个文件", "60 秒内有这么多个“不同文件”下载失败时，判定为限流并进入冷却（同一文件反复失败只算一次）。"),
     DownloadSettingSpec("cooldown_seconds", "冷却时长", 180, 30, 1800, True, "秒", "判定限流后整批暂停的基准时长；连续触发会自动翻倍（上限 30 分钟）。"),
-    DownloadSettingSpec("retry_rounds", "疑似限流文件末尾重试次数", 1, 0, 3, True, "次", "批次末尾对“疑似限流”的失败文件再重试的次数；若失败时别的文件能正常下载，则判定为文件自身问题，不会重试。"),
+    DownloadSettingSpec("retry_rounds", "疑似限流文件末尾重试次数", 1, 0, 3, True, "次", "批次末尾对“疑似限流”的失败文件再重试的次数；失败时若前后没有别的文件也在失败（孤立失败），视为该文件自身不可用，不会重试。"),
     DownloadSettingSpec("http400_retries", "400 错误重试次数", 2, 0, 5, True, "次", "同一地址遇到 400 时的退避重试次数（换镜像前）。"),
     DownloadSettingSpec("download_timeout", "下载数据超时", 60, 10, 300, True, "秒", "等待服务器发送下一段数据的最大时长。"),
 )

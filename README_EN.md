@@ -42,7 +42,7 @@ This fork enhances that one area only. **Existing features and the UI layout are
 | Change | Description |
 | :-- | :-- |
 | 🛡️ **Rate-limit circuit breaker** | When several *different* files fail within a short window, the app treats it as rate limiting and pauses (3 minutes by default; the cooldown doubles on repeated trips, capped at 30 minutes), then resumes automatically. A single broken file failing over and over will **not** trip it. |
-| 🔍 **Automatic failure triage (the “probe”)** | When a file fails, the app skips it and keeps downloading the others. If other files still download fine, the failed one is unavailable on the platform's side, so it is reported and never retried. Only when other files fail too does it conclude “rate limited”, wait out the cooldown, and retry once. **Any single file is attempted at most twice per batch**, so nothing is retried forever. |
+| 🔍 **Automatic failure triage (burst detection)** | When a file fails, the app skips it and keeps downloading the others. At the end of the batch it looks at *when* those failures happened: several different files failing within a short window (a burst) means rate limiting, so it waits out the cooldown and retries those files once. An isolated failure — nothing else failing around it — means that particular resource is unavailable, so it is reported and never retried. **Any single file is attempted at most twice per batch**, so nothing is retried forever. |
 | ⏸️ **Pause / Resume** | Pausing lets in-flight files finish, then stops starting new ones. Progress is kept, and “Resume” picks up where it left off. |
 | ⛔ **Cancel all** | Aborts the batch: queued files are dropped, in-flight transfers are interrupted at a chunk boundary and their temp files cleaned up, and already-finished files are untouched. |
 | 📋 **Download log** | The log panel in the bottom-right corner records every file's result, the failure reason (with a plain-language explanation of the HTTP status code), why the app decided it was rate limiting, and the cooldown countdown. |
@@ -178,9 +178,9 @@ With “**添加 PDF 书签**” enabled, bookmarks are added to each textbook o
 When downloading many files, the platform may throttle your requests. This fork handles that automatically — nothing to configure:
 
 - **A failing file is skipped, not retried in place** — the app moves straight on to the next file.
-- **“File is dead” is told apart from “you are throttled”** — if other files still download fine, the failing one is unavailable on the platform's side and is reported as such; if other files fail too, the app concludes it is being throttled, pauses (longer each time it happens, up to 30 minutes), resumes after the cooldown and retries those files once.
+- **“File is dead” is told apart from “you are throttled”** — the app looks at *when* the failures happened, not at whether anything happened to succeed later. A burst of failures across several different files means rate limiting: it pauses (longer each time it happens, up to 30 minutes), resumes after the cooldown and retries those files once. An isolated failure — nothing else failing around it — means that resource is unavailable on the platform's side and is reported as such.
 - **Pause and cancel at any time** — “暂停” lets in-flight files finish, then stops starting new ones (progress is kept); “继续” resumes. “取消” aborts the whole batch: in-flight transfers are interrupted and their temp files removed, while finished files are kept.
-- **Download log** — the “下载日志” panel in the bottom-right corner records each file's outcome, the failure reason (including a plain-language explanation of the HTTP status code), the triage decision, and the cooldown countdown.
+- **Download log** — the “下载日志” panel in the bottom-right corner records each file's outcome, the failure reason (including a plain-language explanation of the HTTP status code), the triage decision, and the cooldown countdown. When the batch ends, the **full failure list (with relative paths) is written into the log too**, so you can rerun just the files that failed.
 
 If the defaults do not suit your network, click “**下载设置**” to adjust concurrency, request interval, the rate-limit threshold, cooldown length, retry count and more. Changes are saved locally and take effect immediately.
 
@@ -204,8 +204,9 @@ If the defaults do not suit your network, click “**下载设置**” to adjust
 
 <br />
 
-- **“资源不可用，已跳过重试”** — other files downloaded fine at that moment, so the platform was up and this particular resource is simply unavailable (e.g. delisted). The app will not waste time retrying it.
-- **“疑似限流，重试后仍失败”** — other files were failing too, so it was judged to be rate limiting; the app paused and retried once, without success.
+- **“文件自身不可用，已跳过重试”** — this was an isolated failure (nothing else failing around it), so the platform was up and this particular resource is simply unavailable (e.g. delisted). The app will not waste time retrying it.
+- **“疑似限流，重试后仍失败”** — several files were failing close together, so it was judged to be rate limiting; the app paused and retried once, without success.
+- **“[清单] …”** — the complete failure list produced at the end of the batch, split into the two categories above with relative paths and reasons, so you can rerun just those files.
 - **“[限流] … 暂停 X 分 Y 秒后自动继续”** — several different files failed in a short window, so the app paused to back off; it resumes automatically when the countdown ends.
 - **HTTP status codes**: `400` bad request (usually throttling or a dead URL), `401` not logged in / token expired, `403` no permission, `404` resource not found, `429` too many requests (throttling), `5xx` platform-side server problem.
 

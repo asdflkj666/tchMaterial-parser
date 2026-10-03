@@ -11,6 +11,25 @@ from src.tchmaterial_parser.api import ResourceInfo
 from src.tchmaterial_parser.ui import download_panel as panel
 
 
+class LogRecorder:
+    """日志控件的替身：记录写进日志区的每一行。"""
+
+    def __init__(self):
+        self.lines: list[str] = []
+
+    def config(self, **kwargs):
+        pass
+
+    def configure(self, **kwargs):
+        pass
+
+    def insert(self, index, text):
+        self.lines.append(text.strip())
+
+    def see(self, index):
+        pass
+
+
 class DownloadBatchTest(unittest.TestCase):
     def setUp(self):
         self.context = ExitStack()
@@ -117,8 +136,8 @@ class DownloadBatchTest(unittest.TestCase):
             self.assertEqual(Path(path).read_bytes(), b"ok")
             self.assertFalse(Path(f"{path}.tmp").exists())
 
-    def test_suspected_rate_limit_failures_are_retried_once_at_the_end(self):
-        """疑似限流的失败（失败时没有别的文件成功过）会在末尾再试一次。"""
+    def test_burst_failures_are_retried_once_at_the_end(self):
+        """成片失败（多个文件几乎同时失败）判定为限流，末尾再试一次。"""
         attempts: dict[str, int] = {}
 
         def download(url, path, chapters, state):
@@ -126,7 +145,7 @@ class DownloadBatchTest(unittest.TestCase):
             if attempts[url] == 1:
                 state["failed_reason"] = "服务器返回 HTTP 状态码 400"
                 state["retryable"] = True
-                state["failed_marker"] = 0
+                state["failed_at"] = time.monotonic()
             else:
                 state["failed_reason"] = None
                 state["retryable"] = False
@@ -141,15 +160,45 @@ class DownloadBatchTest(unittest.TestCase):
         self.notice.assert_called_once_with("下载完成", f"文件已下载到：{self.directory}")
         self.warning.assert_not_called()
 
-    def test_suspected_failures_are_not_retried_when_retry_is_disabled(self):
-        """末尾重试次数设为 0 时，疑似限流的文件也不再重试。"""
+    def test_burst_failures_are_retried_even_when_later_downloads_succeed(self):
+        """回归：失败之后隔很久还有别的文件成功，也仍然算限流，不能被判成文件自身问题。
+
+        旧实现看的是「失败之后直到批次结束之间有没有文件成功」——大批量任务里这个条件
+        恒为真（批次动辄跑几小时），实测一次 6 小时批次 213 个失败全部被跳过、重试 0 个。
+        """
+        attempts: dict[str, int] = {}
+
+        def download(url, path, chapters, state):
+            attempts[url] = attempts.get(url, 0) + 1
+            if url.endswith("/2.pdf"): # 第三个文件正常下载成功
+                state["finished"] = True
+                return
+            if attempts[url] == 1:
+                state["failed_reason"] = "服务器返回 HTTP 状态码 400"
+                state["retryable"] = True
+                state["failed_at"] = time.monotonic()
+            else:
+                state["failed_reason"] = None
+            state["finished"] = True
+
+        with patch.object(panel, "download_file", download), \
+             patch.dict(panel.config.download_settings, {"retry_rounds": 1}):
+            panel.start_download_batch(self.targets(3), self.directory)
+            self.finish()
+
+        self.assertEqual(sorted(attempts.values()), [1, 2, 2]) # 成片失败的 2 个被重试
+        self.notice.assert_called_once_with("下载完成", f"文件已下载到：{self.directory}")
+        self.warning.assert_not_called()
+
+    def test_burst_failures_are_not_retried_when_retry_is_disabled(self):
+        """末尾重试次数设为 0 时，成片失败的文件也不再重试。"""
         attempts: dict[str, int] = {}
 
         def download(url, path, chapters, state):
             attempts[url] = attempts.get(url, 0) + 1
             state["failed_reason"] = "服务器返回 HTTP 状态码 400"
             state["retryable"] = True
-            state["failed_marker"] = 0
+            state["failed_at"] = time.monotonic()
             state["finished"] = True
 
         with patch.object(panel, "download_file", download), \
@@ -159,8 +208,8 @@ class DownloadBatchTest(unittest.TestCase):
 
         self.assertEqual(sorted(attempts.values()), [1, 1])
 
-    def test_probe_marks_failure_as_file_problem_when_others_succeeded(self):
-        """探针：失败时若别的文件下载成功过，判定为文件自身问题，不再重试。"""
+    def test_isolated_failure_is_not_retried(self):
+        """孤立失败（前后没有别的文件也在失败）判定为文件自身不可用，不重试。"""
         attempts: dict[str, int] = {}
 
         def download(url, path, chapters, state):
@@ -168,9 +217,7 @@ class DownloadBatchTest(unittest.TestCase):
             if url.endswith("/0.pdf"):
                 state["failed_reason"] = "服务器返回 HTTP 状态码 400"
                 state["retryable"] = True
-                state["failed_marker"] = 0 # 失败发生在成功记录之前
-            else:
-                panel.controller.report_success() # 别的文件下载成功 → 平台当时是通的
+                state["failed_at"] = time.monotonic()
             state["finished"] = True
 
         with patch.object(panel, "download_file", download), \
@@ -180,8 +227,27 @@ class DownloadBatchTest(unittest.TestCase):
 
         self.assertEqual(sorted(attempts.values()), [1, 1]) # 坏文件未被重试
         failed_message = self.warning.call_args[0][1]
-        self.assertIn("资源不可用，已跳过重试", failed_message)
+        self.assertIn("已跳过重试", failed_message)
         self.assertNotIn("疑似限流", failed_message)
+
+    def test_failure_list_is_written_to_the_log(self):
+        """失败清单必须落进日志区：只弹对话框的话，关掉就再也拿不到名单。"""
+        def download(url, path, chapters, state):
+            state["failed_reason"] = "服务器返回 HTTP 状态码 404"
+            state["retryable"] = False
+            state["finished"] = True
+
+        recorder = LogRecorder()
+        with patch.object(panel.widgets, "log_text", recorder), \
+             patch.object(panel, "download_file", download):
+            panel.start_download_batch(self.targets(2), self.directory)
+            self.finish()
+
+        log = "\n".join(recorder.lines)
+        self.assertIn("[清单]", log)
+        self.assertIn("已跳过重试", log)
+        self.assertIn("教材0.pdf", log)
+        self.assertIn("教材1.pdf", log)
 
     def test_non_retryable_failures_are_not_requeued(self):
         """404 等永久失败不会被重新排队。"""
@@ -203,22 +269,6 @@ class DownloadBatchTest(unittest.TestCase):
 
     def test_log_panel_records_progress_and_result(self):
         """日志区应记录开始、每个文件的结果与批次汇总。"""
-        class LogRecorder:
-            def __init__(self):
-                self.lines: list[str] = []
-
-            def config(self, **kwargs):
-                pass
-
-            def configure(self, **kwargs):
-                pass
-
-            def insert(self, index, text):
-                self.lines.append(text.strip())
-
-            def see(self, index):
-                pass
-
         class Response:
             def __init__(self, status_code):
                 self.ok = status_code < 400

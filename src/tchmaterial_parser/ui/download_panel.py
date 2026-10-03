@@ -598,19 +598,48 @@ def create_download_state(url: str, save_path: str) -> dict:
         "failed_reason": None,
         "retryable": False, # 疑因限流/网络波动失败，末尾可能值得再试一次
         "cancelled": False, # 用户取消，不计入失败清单
-        "failed_marker": 0, # 失败时的成功计数，供“探针”判断失败时平台是否仍可用
+        "failed_at": 0.0, # 失败的 time.monotonic() 时刻，供“成片检测”判断是否被限流
         "retried": False, # 是否已在批次末尾重试过
     }
 
-def classify_failures(states: list[dict]) -> tuple[list[dict], list[dict]]:
-    """用“探针”信号把失败分成两类：
+def burst_failure_keys(states: list[dict]) -> set[int]:
+    """找出「成片失败」的文件：一段时间内接连失败，是限流的典型特征。
 
-    - 「文件自身问题」：401/403/404 等明确不可重试，或失败之后仍有别的文件下载成功
-      （说明当时平台是通的，那么这个文件是自己不可用）。
-    - 「疑似限流」：失败之后再没有任何文件成功过，更可能是被限流，值得在末尾重试。
+    只看失败彼此在时间上的疏密，**不要**看「失败之后到批次结束之间有没有别的文件成功」——
+    后者在大批量任务里恒为真（批次动辄跑几小时，失败后总有别的文件成功），会把所有失败
+    都误判成「文件自身问题」，实测一次 6 小时批次 213 个失败一个都没重试。
+
+    判定规则：把失败按时刻排序，相邻间隔不超过 CIRCUIT_FAILURE_WINDOW 的归为一簇；
+    成员数 ≥ 2 的簇判为成片失败。孤立失败才是文件自身不可用。
+    """
+    window = config.CIRCUIT_FAILURE_WINDOW
+    failed = sorted(
+        (state["failed_at"], id(state))
+        for state in states
+        if state["failed_reason"] and not state.get("cancelled") and state.get("failed_at")
+    )
+    marked: set[int] = set()
+    cluster: list[tuple[float, int]] = []
+    for item in failed:
+        if cluster and item[0] - cluster[-1][0] > window:
+            if len(cluster) >= 2:
+                marked.update(key for _, key in cluster)
+            cluster = []
+        cluster.append(item)
+    if len(cluster) >= 2:
+        marked.update(key for _, key in cluster)
+    return marked
+
+def classify_failures(states: list[dict]) -> tuple[list[dict], list[dict]]:
+    """把失败分成两类（纯函数，只依赖 states，不读控制器状态）：
+
+    - 「文件自身问题」：401/403/404 等明确不可重试，或**孤立**失败
+      （前后没有别的文件也在失败 → 平台是通的，是这个文件自己不可用）。
+    - 「疑似限流」：失败成片出现（触发熔断的那批必然落在这里），值得在末尾重试。
 
     首轮失败的文件不会立刻重试，直接放过、继续下一个，保证效率。
     """
+    burst = burst_failure_keys(states)
     file_problems: list[dict] = []
     throttled: list[dict] = []
     for state in states:
@@ -618,10 +647,12 @@ def classify_failures(states: list[dict]) -> tuple[list[dict], list[dict]]:
             continue
         if state.get("retried"):
             throttled.append(state) # 已在末尾重试过仍失败，归入“疑似限流仍失败”
-        elif not state.get("retryable") or controller.has_success_since(state.get("failed_marker", 0)):
-            file_problems.append(state) # 明确不可重试，或失败时别的文件仍能下载
-        else:
+        elif not state.get("retryable"):
+            file_problems.append(state) # 401/403/404，重试无意义
+        elif id(state) in burst:
             throttled.append(state)
+        else:
+            file_problems.append(state)
     return file_problems, throttled
 
 def run_download_pass(executor: ThreadPoolExecutor, targets: list[tuple[ResourceInfo, str]], states: list[dict]) -> None:
@@ -658,9 +689,9 @@ def start_download_batch(targets: list[tuple[ResourceInfo, str]], directory: str
             if not controller.is_cancelled:
                 file_problems, throttled = classify_failures(states)
                 if file_problems:
-                    log_message(f"[提示] {len(file_problems)} 个文件失败时其它文件仍能下载，判定为文件自身问题，已跳过重试")
+                    log_message(f"[提示] {len(file_problems)} 个文件为孤立失败（失败前后没有别的文件也在失败），判定为文件自身不可用，已跳过重试")
                 if throttled and retries_left > 0:
-                    log_message(f"[提示] {len(throttled)} 个文件疑似限流，等待冷却结束后再试一次")
+                    log_message(f"[提示] {len(throttled)} 个文件成片失败（疑似限流），等待冷却结束后再试一次")
                     if controller.wait_to_start(): # 冷却期间挂起，结束后再重试
                         retry_targets = [target_of_state[id(state)] for state in throttled]
                         for state in throttled:
@@ -674,13 +705,32 @@ def start_download_batch(targets: list[tuple[ResourceInfo, str]], directory: str
 
     thread_it(worker)
 
+def relative_path(save_path: str, directory: str) -> str:
+    """相对下载目录的路径；跨盘符时 relpath 会抛 ValueError，退回绝对路径。"""
+    try:
+        return os.path.relpath(save_path, directory)
+    except ValueError:
+        return save_path
+
+def log_failure_list(header: str, states: list[dict], directory: str) -> None:
+    """把失败清单写进日志区。
+
+    批次可能跑几小时，结束时的弹窗一关名单就没了；写进日志文件后用户才能照着重跑失败项。
+    """
+    if not states:
+        return
+    log_message(f"[清单] 以下 {len(states)} 个文件{header}：")
+    for state in states:
+        reason = (state.get("failed_reason") or "未知原因").splitlines()[0]
+        log_message(f"    {relative_path(state['save_path'], directory)} — {reason}")
+
 def finish_download_batch(
     states: list[dict],
     directory: str,
     file_problems: list[dict] | None = None,
     throttled: list[dict] | None = None,
 ) -> None: # 在主线程统一恢复控件并显示整批结果
-    # 分类要用探针信号（成功计数），必须在 controller.reset() 之前完成，否则信号会被清掉
+    # classify_failures 是只读 states 的纯函数，与 controller 状态无关，调用顺序不敏感
     if file_problems is None or throttled is None:
         file_problems, throttled = classify_failures(states)
     controller.reset() # 复位暂停/取消状态，供下一批干净开始
@@ -692,9 +742,13 @@ def finish_download_batch(
     succeeded = [state for state in states if not state["failed_reason"] and not state.get("cancelled")]
     cancelled_states = [state for state in states if state.get("cancelled")]
     log_message(
-        f"[结束] 成功 {len(succeeded)}，资源不可用 {len(file_problems)}，疑似限流仍失败 {len(throttled)}"
+        f"[结束] 成功 {len(succeeded)}，文件自身不可用 {len(file_problems)}（已跳过重试），"
+        f"疑似限流重试后仍失败 {len(throttled)}"
         + (f"，已取消 {len(cancelled_states)}" if cancelled_states else "")
     )
+    # 弹窗关掉就没了，清单必须同时落进日志，用户才能照着重跑失败项
+    log_failure_list("判定为文件自身不可用，已跳过重试", file_problems, directory)
+    log_failure_list("疑似限流，重试后仍失败", throttled, directory)
 
     if cancelled_states and not file_problems and not throttled:
         messagebox.showinfo("下载已取消", f"已取消剩余任务。已完成的文件保留在：\n{directory}")
@@ -707,13 +761,13 @@ def finish_download_batch(
     sections: list[str] = []
     if file_problems:
         sections.append(
-            "以下文件下载失败（资源不可用，已跳过重试）：\n"
-            + "\n\n".join(f"{os.path.relpath(state['save_path'], directory)}\n{state['failed_reason']}" for state in file_problems)
+            "以下文件下载失败（孤立失败，判定为文件自身不可用，已跳过重试）：\n"
+            + "\n\n".join(f"{relative_path(state['save_path'], directory)}\n{state['failed_reason']}" for state in file_problems)
         )
     if throttled:
         sections.append(
             "以下文件疑似限流，重试后仍失败：\n"
-            + "\n\n".join(f"{os.path.relpath(state['save_path'], directory)}\n{state['failed_reason']}" for state in throttled)
+            + "\n\n".join(f"{relative_path(state['save_path'], directory)}\n{state['failed_reason']}" for state in throttled)
         )
     if cancelled_states:
         sections.append(f"另有 {len(cancelled_states)} 个文件因取消未下载。")
@@ -739,7 +793,7 @@ def download_file(url: str, save_path: str, chapters: list[dict] | None = None, 
             current_state["failed_reason"] = download_failure_reason(response, attempted_urls)
             # 瞬态失败（限流/服务端错误）末尾可能值得重试；401/403 需要用户重新设置 Token，404 资源不存在，重试无意义
             current_state["retryable"] = response.status_code not in (401, 403, 404) and response.status_code >= 400
-            current_state["failed_marker"] = controller.success_marker()
+            current_state["failed_at"] = time.monotonic()
         else:
             current_state["total_size"] = int(response.headers.get("Content-Length", 0))
 
@@ -757,7 +811,7 @@ def download_file(url: str, save_path: str, chapters: list[dict] | None = None, 
             if current_state["total_size"] > 0 and current_state["downloaded_size"] != current_state["total_size"]: # 文件下载不完整
                 current_state["failed_reason"] = f"文件下载不完整，需下载 {current_state['total_size']} 字节，实际下载 {current_state['downloaded_size']} 字节"
                 current_state["retryable"] = True # 网络波动导致的截断，重试通常可以恢复
-                current_state["failed_marker"] = controller.success_marker()
+                current_state["failed_at"] = time.monotonic()
                 current_state["downloaded_size"], current_state["total_size"] = 0, 0
                 try:
                     os.remove(temp_path)
@@ -769,7 +823,6 @@ def download_file(url: str, save_path: str, chapters: list[dict] | None = None, 
                     add_bookmarks(temp_path, chapters)
 
                 os.replace(temp_path, save_path) # 重命名临时文件为目标文件
-                controller.report_success() # 探针信号：此刻平台是通的
 
     except DownloadCancelled: # 用户取消：清理半成品并标记取消（不计入失败清单）
         current_state["cancelled"] = True
@@ -784,7 +837,7 @@ def download_file(url: str, save_path: str, chapters: list[dict] | None = None, 
         current_state["downloaded_size"], current_state["total_size"] = 0, 0
         current_state["failed_reason"] = redact_access_token(traceback.format_exc().rstrip())
         current_state["retryable"] = isinstance(e, NetworkDownloadError) # 网络异常按瞬态处理
-        current_state["failed_marker"] = controller.success_marker()
+        current_state["failed_at"] = time.monotonic()
         try:
             os.remove(temp_path)
         except Exception:

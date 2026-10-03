@@ -71,20 +71,8 @@ class ControllerTest(unittest.TestCase):
         self.assertIsNone(controller.report_failure("https://example.com/new.pdf"))
         self.assertEqual(controller.distinct_failure_count(), 1)
 
-    # —— 探针信号 ——
-
-    def test_success_signal_marks_when_platform_was_reachable(self) -> None:
-        controller = make_controller()
-        marker = controller.success_marker()
-        controller.report_success()
-        self.assertTrue(controller.has_success_since(marker)) # 成功后计数增长 → 平台当时是通的
-        self.assertFalse(controller.has_success_since(controller.success_marker())) # 与当前计数相同则不算
-
-    def test_reset_clears_success_signal(self) -> None:
-        controller = make_controller()
-        controller.report_success()
-        controller.reset()
-        self.assertFalse(controller.has_success_since(0))
+    # 失败定性（限流 vs 文件自身不可用）不在这里测：它是批次级的纯函数，
+    # 见 tests/test_download_batch.py 的 burst_failure_keys / classify_failures 用例。
 
     # —— 暂停 / 取消 / 冷却 ——
 
