@@ -55,7 +55,7 @@ pyinstaller ./tchMaterial-parser.spec
 
 - **不要公开 Access Token**：Issue、提交信息、截图、代码里都不要出现。
 - 改动仅用于个人学习与教学参考，请遵守国家中小学智慧教育平台的服务条款与资源版权。
-- 本 fork 是个人的分支，**不接受上游式的 Issue / PR 流程**；原版功能（解析、下载、书签等）的问题请到[原项目](https://github.com/happycola233/tchMaterial-parser/issues)反馈。
+- 本 fork 是个人的分支，但**欢迎提交 Issue 与 PR**：PR 请保持单一目的，并跑通上面的测试与 flake8。原版功能（解析、下载、书签等）的问题也可以到[原项目](https://github.com/happycola233/tchMaterial-parser/issues)反馈。
 
 ## 上游
 

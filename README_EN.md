@@ -249,7 +249,7 @@ If the defaults do not suit your network, click “**下载设置**” to adjust
 
 ## 🤝 Feedback & upstream
 
-This fork is maintained for personal use and **does not accept issues or pull requests**. If you hit a problem in an original feature (parsing, downloading, bookmarks…), please report it to [the original project](https://github.com/happycola233/tchMaterial-parser/issues). If you want to make changes yourself, just fork the source; see the download/rate-limit conventions in `AGENTS.md`.
+This fork is maintained for personal use, but **issues and pull requests are welcome**. If you hit a problem in an original feature (parsing, downloading, bookmarks…), you can also report it to [the original project](https://github.com/happycola233/tchMaterial-parser/issues). If you want to make changes yourself, just fork the source; see the download/rate-limit conventions in `AGENTS.md`.
 
 The original project is developed and maintained by [@happycola233](https://github.com/happycola233) and many contributors — almost all of this fork's code comes from them. Thanks also to [@PtJade-Ceramic](https://github.com/PtJade-Ceramic) (WinGet suggestion) and [@iamzhz](https://github.com/iamzhz) (AUR package).
 

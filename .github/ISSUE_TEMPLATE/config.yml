@@ -3,5 +3,8 @@
 blank_issues_enabled: true
 contact_links:
   - name: ❓ 下载失败？先看常见问题
-    url: https://github.com/happycola233/tchMaterial-parser/blob/main/README.md#-常见问题
+    url: https://github.com/asdflkj666/tchMaterial-parser/blob/main/README.md#-常见问题
     about: 绝大多数下载失败是 Access Token 过期导致的，这里有排查步骤。
+  - name: 🔀 原版功能的问题
+    url: https://github.com/happycola233/tchMaterial-parser/issues
+    about: 解析、下载、书签等原版功能的问题，也可以到上游仓库反馈。

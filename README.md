@@ -248,7 +248,7 @@ https://basic.smartedu.cn/tchMaterial/detail?contentType=assets_document&content
 
 ## 🤝 反馈与上游
 
-本分支为个人自用而改，**不接受 Issue 与 Pull Request**。若您遇到的是解析、下载、书签等原版功能的问题，请到[原项目](https://github.com/happycola233/tchMaterial-parser/issues)反馈；若您也想改，直接 fork 源码即可，欢迎参考 `AGENTS.md` 中的下载与限流约定。
+本分支为个人自用而改，但**欢迎提交 Issue 与 Pull Request**。若您遇到的是解析、下载、书签等原版功能的问题，也可以到[原项目](https://github.com/happycola233/tchMaterial-parser/issues)反馈；若您想自己动手改，直接 fork 源码即可，欢迎参考 `AGENTS.md` 中的下载与限流约定。
 
 原项目由 [@happycola233](https://github.com/happycola233) 及众多贡献者开发维护，本分支的绝大部分代码来自他们。也感谢 [@PtJade-Ceramic](https://github.com/PtJade-Ceramic)（WinGet 分发建议）与 [@iamzhz](https://github.com/iamzhz)（AUR 发行包）。
 
