@@ -72,8 +72,16 @@ python -m flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 ## 构建与发布
 
 - 打包使用 `tchMaterial-parser.spec`（PyInstaller）：Windows 依赖 `version_info.txt` 与 `assets/icon.ico`，macOS 依赖 `assets/logo.icns`。这几个是**真实文件**（索引里 100644），处理打包配置时不要把 `assets/` 下的软链接误当成它们。
-- 发布由 `.github/workflows/build-release.yml` 自动完成：矩阵覆盖 Windows / Linux / macOS 的 x64 与 Arm64，**创建并发布 Release**（`release: published`）或手动 `workflow_dispatch`（需填 tag）即可触发，构建产物会自动挂到该 Release。
-- **tag 命名要避开上游已用过的 tag**（上游已发布到 `v4.x`），建议形如 `v<版本>-fork.<序号>`；若采用 `v4.3.1` 这类正式版本号，需同步修改 `pyproject.toml` 与 `version_info.txt` 中的版本。
+- **正式发布 = 本地编译 + 网页手动上传产物，不使用 CI 自动构建。** 本地命令（**必须在仓库根目录执行**，spec 里用的是相对路径）：
+
+  ```sh
+  py -3 -m pip install pyinstaller
+  py -3 -m PyInstaller tchMaterial-parser.spec --noconfirm
+  ```
+
+  产物为 `dist/tchMaterial-parser.exe`（单文件、无控制台窗口）；`build/`、`dist/` 已被 `.gitignore` 忽略，不会污染 git 状态。
+- `.github/workflows/build-release.yml` **只在手动 `workflow_dispatch` 时运行**（需填一个已存在的 tag）。**发布 Release 不会触发它，这是刻意如此**：不要把 `release: published` 加回去，否则每次发版都会连带触发全平台构建，而且产物会和手动上传的同名资产冲突（GitHub 拒绝重复资产名，会上传失败）。需要其它平台产物时，去 Actions 页手动跑一次；该矩阵覆盖 Windows / Linux / macOS 的 x64 与 Arm64。
+- **tag 命名要避开上游已用过的 tag**（上游已发布到 `v4.x`），建议形如 `v<版本>-fork.<序号>`；手动跑矩阵前必须先把 tag push 到远端，否则 `actions/checkout` 按 tag 检出会失败。若采用 `v4.3.1` 这类正式版本号，需同步修改 `pyproject.toml` 与 `version_info.txt` 中的版本。
 - 产物为**未签名**构建，杀毒软件可能提示；发布说明中应写明这一点，并说明本仓库的增强功能**不包含**在上游发布的安装包中。
 
 ## Git 操作

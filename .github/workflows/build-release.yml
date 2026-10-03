@@ -3,12 +3,15 @@ name: Build & Release
 permissions:
   contents: write
 
+# 只在手动触发时构建：**发布 Release 不会自动触发本工作流**。
+# 本仓库的正式发布是本地编译后手动上传产物的（见 AGENTS.md「构建与发布」）；
+# 这个矩阵留着，是为了需要其它平台产物时能一键补出来。
+# 触发前请先确保目标 tag 已经 push 到远端，否则 checkout 会失败。
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
+        description: "已存在的 tag：构建该 tag 指向的提交，并把产物挂到同名 Release 上"
         required: true
         type: string
 
@@ -49,6 +52,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          # 必须按 tag 检出：手动触发时 github.ref_name 是分支名，不指定就会构建分支当前代码，
+          # 产物与挂上去的 tag 对不上
+          ref: ${{ inputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -79,6 +86,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/${{ matrix.asset }}
-          tag_name: ${{ inputs.tag || github.ref_name }}
+          tag_name: ${{ inputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
