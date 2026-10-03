@@ -180,7 +180,8 @@ When downloading many files, the platform may throttle your requests. This fork 
 - **A failing file is skipped, not retried in place** — the app moves straight on to the next file.
 - **“File is dead” is told apart from “you are throttled”** — the app looks at *when* the failures happened, not at whether anything happened to succeed later. A burst of failures across several different files means rate limiting: it pauses (longer each time it happens, up to 30 minutes), resumes after the cooldown and retries those files once. An isolated failure — nothing else failing around it — means that resource is unavailable on the platform's side and is reported as such.
 - **Pause and cancel at any time** — “暂停” lets in-flight files finish, then stops starting new ones (progress is kept); “继续” resumes. “取消” aborts the whole batch: in-flight transfers are interrupted and their temp files removed, while finished files are kept.
-- **Download log** — the “下载日志” panel in the bottom-right corner records each file's outcome, the failure reason (including a plain-language explanation of the HTTP status code), the triage decision, and the cooldown countdown. When the batch ends, the **full failure list (with relative paths) is written into the log too**, so you can rerun just the files that failed.
+- **Download log** — the “下载日志” panel in the bottom-right corner records each file's outcome, the failure reason (including a plain-language explanation of the HTTP status code), the triage decision, and the cooldown countdown. When the batch ends, the **full failure list (with relative paths) is written into the log too**.
+- **The failure list is saved as a file** — the summary dialog only reports counts (a few hundred failures times their long reasons would overflow the screen), while the full list is saved as `下载失败清单.txt` in the download directory and you are asked whether to open it. You can also open that file later. It is what you use to rerun just the failed files.
 
 If the defaults do not suit your network, click “**下载设置**” to adjust concurrency, request interval, the rate-limit threshold, cooldown length, retry count and more. Changes are saved locally and take effect immediately.
 
@@ -206,7 +207,7 @@ If the defaults do not suit your network, click “**下载设置**” to adjust
 
 - **“文件自身不可用，已跳过重试”** — this was an isolated failure (nothing else failing around it), so the platform was up and this particular resource is simply unavailable (e.g. delisted). The app will not waste time retrying it.
 - **“疑似限流，重试后仍失败”** — several files were failing close together, so it was judged to be rate limiting; the app paused and retried once, without success.
-- **“[清单] …”** — the complete failure list produced at the end of the batch, split into the two categories above with relative paths and reasons, so you can rerun just those files.
+- **“[清单] …”** — the complete failure list produced at the end of the batch, split into the two categories above with relative paths and reasons. The same content is saved as `下载失败清单.txt` in the download directory, so you can rerun just those files.
 - **“[限流] … 暂停 X 分 Y 秒后自动继续”** — several different files failed in a short window, so the app paused to back off; it resumes automatically when the countdown ends.
 - **HTTP status codes**: `400` bad request (usually throttling or a dead URL), `401` not logged in / token expired, `403` no permission, `404` resource not found, `429` too many requests (throttling), `5xx` platform-side server problem.
 

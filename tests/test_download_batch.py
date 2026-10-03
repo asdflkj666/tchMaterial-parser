@@ -44,6 +44,9 @@ class DownloadBatchTest(unittest.TestCase):
             self.context.enter_context(patch.object(panel.widgets, name, Mock()))
         self.notice = self.context.enter_context(patch.object(panel.messagebox, "showinfo"))
         self.warning = self.context.enter_context(patch.object(panel.messagebox, "showwarning"))
+        # 默认「不打开清单」：返回真值的话 open_path 会真的去调系统默认程序打开文件
+        self.ask_yes_no = self.context.enter_context(patch.object(panel.messagebox, "askyesno", return_value=False))
+        self.open_path = self.context.enter_context(patch.object(panel, "open_path"))
         self.context.enter_context(patch.object(panel, "ui_call", lambda fn, *args, **kwargs: self.callbacks.put((fn, args, kwargs))))
         self.addCleanup(panel.controller.reset) # 每个用例结束后清理暂停/取消状态
 
@@ -91,8 +94,8 @@ class DownloadBatchTest(unittest.TestCase):
             self.finish()
 
         self.assertEqual(observed, [5] * 5)
-        self.warning.assert_called_once()
-        self.notice.assert_not_called()
+        self.ask_yes_no.assert_called_once()
+        self.warning.assert_not_called()
         panel.widgets.download_btn.config.assert_called_once_with(state="normal")
 
     def test_concurrent_downloads_emit_one_batch_notice(self):
@@ -110,7 +113,7 @@ class DownloadBatchTest(unittest.TestCase):
             panel.start_download_batch(self.targets(2), self.directory)
             self.finish()
 
-        self.warning.assert_called_once()
+        self.ask_yes_no.assert_called_once()
         self.assertFalse(panel.downloads_active())
         self.assertTrue(all(state["failed_reason"] for state in panel.download_states))
 
@@ -132,6 +135,7 @@ class DownloadBatchTest(unittest.TestCase):
 
         self.notice.assert_called_once_with("下载完成", f"文件已下载到：{self.directory}")
         self.warning.assert_not_called()
+        self.assertFalse((Path(self.directory) / panel.FAILURE_LIST_FILENAME).exists()) # 全成功就不写清单
         for _, path in targets:
             self.assertEqual(Path(path).read_bytes(), b"ok")
             self.assertFalse(Path(f"{path}.tmp").exists())
@@ -226,9 +230,46 @@ class DownloadBatchTest(unittest.TestCase):
             self.finish()
 
         self.assertEqual(sorted(attempts.values()), [1, 1]) # 坏文件未被重试
-        failed_message = self.warning.call_args[0][1]
+        failed_message = self.ask_yes_no.call_args[0][1]
         self.assertIn("已跳过重试", failed_message)
         self.assertNotIn("疑似限流", failed_message)
+
+    def test_failure_list_is_saved_and_opened_on_confirm(self):
+        """失败清单写成下载目录下的文件；只在用户确认时才去打开，弹窗本身保持简短。"""
+        def download(url, path, chapters, state):
+            state["failed_reason"] = "服务器返回 HTTP 状态码 404（资源不存在：该文件可能已从平台下架）"
+            state["retryable"] = False
+            state["finished"] = True
+
+        self.ask_yes_no.return_value = True
+        with patch.object(panel, "download_file", download):
+            panel.start_download_batch(self.targets(2), self.directory)
+            self.finish()
+
+        list_path = Path(self.directory) / panel.FAILURE_LIST_FILENAME
+        content = list_path.read_text(encoding="utf-8")
+        self.assertIn("教材0.pdf", content)
+        self.assertIn("教材1.pdf", content)
+        self.assertIn("404", content)
+        self.open_path.assert_called_once_with(str(list_path))
+
+        # 弹窗只报数字与清单位置，不再把每一条失败原因塞进去（这才是它撑满屏幕的原因）
+        dialog = self.ask_yes_no.call_args[0][1]
+        self.assertNotIn("服务器返回", dialog)
+        self.assertLess(len(dialog), 400)
+
+    def test_failure_list_is_not_opened_when_declined(self):
+        def download(url, path, chapters, state):
+            state["failed_reason"] = "服务器返回 HTTP 状态码 404"
+            state["retryable"] = False
+            state["finished"] = True
+
+        with patch.object(panel, "download_file", download):
+            panel.start_download_batch(self.targets(1), self.directory)
+            self.finish()
+
+        self.assertTrue((Path(self.directory) / panel.FAILURE_LIST_FILENAME).exists())
+        self.open_path.assert_not_called()
 
     def test_failure_list_is_written_to_the_log(self):
         """失败清单必须落进日志区：只弹对话框的话，关掉就再也拿不到名单。"""
@@ -265,7 +306,7 @@ class DownloadBatchTest(unittest.TestCase):
             self.finish()
 
         self.assertEqual(sorted(attempts.values()), [1, 1]) # 没有重试
-        self.warning.assert_called_once()
+        self.ask_yes_no.assert_called_once()
 
     def test_log_panel_records_progress_and_result(self):
         """日志区应记录开始、每个文件的结果与批次汇总。"""

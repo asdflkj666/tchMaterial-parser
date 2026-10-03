@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # 平台相关的基础设施：错误输出、只读资源定位、操作系统判定与 Windows 专有库
 
-import sys, platform, traceback
+import os, subprocess, sys, platform, traceback
 from pathlib import Path
 
 def print_error(e: Exception) -> None: # 打印错误信息到控制台
@@ -28,3 +28,9 @@ if os_name == "Windows": # 在 Windows 操作系统下，导入 Windows 相关�
         win32print = win32gui = win32con = win32api = None
 else:
     win32print = win32gui = win32con = win32api = ctypes = winreg = None
+
+def open_path(path: str) -> None: # 用系统默认程序打开文件或目录（跨平台）；失败时抛异常，由调用方决定是否提示
+    if os_name == "Windows":
+        os.startfile(path) # 仅 Windows 提供
+    else:
+        subprocess.Popen(["open" if os_name == "Darwin" else "xdg-open", path])

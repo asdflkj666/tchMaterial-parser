@@ -50,7 +50,7 @@
 2. **失败先放过、末尾再裁决**：首轮失败不做原地重试，直接继续下一个文件；批次末尾用 `classify_failures()` 区分「文件自身不可用」与「疑似限流」。判据由 `burst_failure_keys()` 给出，做法是对 `state["failed_at"]` 做**成片检测**：失败按时刻排序，相邻间隔不超过 `config.CIRCUIT_FAILURE_WINDOW` 的归为一簇，成员数 ≥ 2 判为限流，孤立失败判为文件自身不可用。只对「疑似限流」的再试一次，重试过要标记 `state["retried"]` 并重新裁决。
    - **不要**把判据改成「失败之后到批次结束之间有没有别的文件成功」：大批量任务里这个条件恒为真（批次动辄跑几小时），会导致**所有**失败都被判成文件自身不可用、一个都不重试。实测一次 6 小时批次 213 个失败全部被跳过；其中抽查若干「资源不可用」的文件，几十分钟后同名同书的文件又下载成功了。
    - 失败时刻由 `download_file` 自己写进 `state["failed_at"]`（`time.monotonic()`），`classify_failures()` 保持**只读 states 的纯函数**，不要让它依赖 `controller` 的批次状态。
-3. **失败清单要落盘**：批次结束的弹窗关掉就没有了，`log_failure_list()` 会把两类失败清单（含相对路径与原因）写进日志区，便于用户照着重跑。改动汇总逻辑时不要删掉这一步。
+3. **失败清单要落盘，结束弹窗只报数字**：`log_failure_list()` 写进日志区、`write_failure_list()` 写成下载目录下的 `下载失败清单.txt`，便于用户照着重跑。**不要**把逐条失败原因塞回 `messagebox`——几十上百个失败乘以每条的长原因会把对话框撑满整个屏幕（实测一次 213 个失败）。弹窗只用 `askyesno` 报数量并询问是否打开清单文件，`open_path()` 负责跨平台打开。
 4. **暂停按文件边界生效**：进行中的文件会下完，未开始的任务在 `controller.wait_to_start()` 处阻塞；取消则在分块写入点抛 `DownloadCancelled` 并清理 `.tmp`。
 5. **下载设置**统一在 `config.DOWNLOAD_SETTING_SPECS` 中声明（含默认值、范围、说明），界面由 `ui/settings_window.py` 自动生成；`min_request_interval` 与 `http400_retries` 通过 `download_panel.apply_download_settings()` 同步到模块变量 `_MIN_REQUEST_INTERVAL` / `_400_RETRY_DELAYS`——这两个变量被测试直接 patch，**不要删除或内联**。
 6. **配置与 UI 的解耦**：设置窗口只写 `config`，不直接依赖下载模块；保存成功后由 `config.on_download_settings_changed()` 通知，接线放在 `app.py`。新增需要「保存后立即生效」的配置项时沿用这条路径。

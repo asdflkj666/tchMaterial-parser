@@ -21,7 +21,7 @@ from ..api import ResourceInfo, parse
 from ..bookmarks import add_bookmarks
 from ..download_control import DownloadCancelled, controller
 from ..network import REQUEST_TIMEOUT, request_headers, session
-from ..platform_utils import print_error
+from ..platform_utils import open_path, print_error
 
 download_states: list[dict] = [] # 初始化下载状态
 @dataclass
@@ -54,6 +54,7 @@ _rate_lock = threading.Lock()
 _last_request_at = 0.0
 _PROGRESS_REFRESH_INTERVAL = 0.2 # 进度界面刷新的最小间隔（秒），见 refresh_download_progress
 _last_progress_refresh = 0.0
+FAILURE_LIST_FILENAME = "下载失败清单.txt" # 批次结束时写在下载目录下的失败清单（见 write_failure_list）
 
 # 常见 HTTP 状态码的中文解释，写入日志与失败原因，避免用户看不懂纯状态码
 HTTP_STATUS_HINTS = {
@@ -724,6 +725,41 @@ def log_failure_list(header: str, states: list[dict], directory: str) -> None:
         reason = (state.get("failed_reason") or "未知原因").splitlines()[0]
         log_message(f"    {relative_path(state['save_path'], directory)} — {reason}")
 
+def write_failure_list(directory: str, file_problems: list[dict], throttled: list[dict]) -> str | None:
+    """把两类失败清单写成下载目录下的文本文件，返回文件路径；没有失败或写不进去则返回 None。
+
+    失败清单不能只放在结束弹窗里：几十上百个失败乘以每条的长原因会把对话框撑满屏幕，
+    而且关掉就没了。写进文件既能让用户在编辑器里查看，也能照着重跑失败项。
+    """
+    if not file_problems and not throttled:
+        return None
+    lines = [
+        f"下载目录：{directory}",
+        f"生成时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
+        f"失败合计：{len(file_problems) + len(throttled)} 个",
+        "",
+    ]
+    for header, states in (
+        ("文件自身不可用（孤立失败，已跳过重试）", file_problems),
+        ("疑似限流（重试后仍失败）", throttled),
+    ):
+        if not states:
+            continue
+        lines.append(f"=== {header}：{len(states)} 个 ===")
+        for state in states:
+            reason = (state.get("failed_reason") or "未知原因").splitlines()[0]
+            lines.append(relative_path(state["save_path"], directory))
+            lines.append(f"    {reason}")
+        lines.append("")
+    path = os.path.join(directory, FAILURE_LIST_FILENAME)
+    try:
+        with open(path, "w", encoding="utf-8") as file:
+            file.write("\n".join(lines) + "\n")
+    except OSError as e: # 目录只读、路径被占用等：写不了不影响下载结果，只是没有清单文件
+        print_error(e)
+        return None
+    return path
+
 def finish_download_batch(
     states: list[dict],
     directory: str,
@@ -746,7 +782,7 @@ def finish_download_batch(
         f"疑似限流重试后仍失败 {len(throttled)}"
         + (f"，已取消 {len(cancelled_states)}" if cancelled_states else "")
     )
-    # 弹窗关掉就没了，清单必须同时落进日志，用户才能照着重跑失败项
+    # 清单要有三个去处：实时日志（当场可见）、清单文件（可长期留存、可照着重跑）、结束弹窗（只报数量）
     log_failure_list("判定为文件自身不可用，已跳过重试", file_problems, directory)
     log_failure_list("疑似限流，重试后仍失败", throttled, directory)
 
@@ -758,20 +794,30 @@ def finish_download_batch(
         messagebox.showinfo("下载完成", f"文件已下载到：{directory}")
         return
 
-    sections: list[str] = []
+    # 失败清单写成文件，弹窗只报数字：几十上百个失败乘以每条的长原因，对话框会撑满整个屏幕
+    failure_list = write_failure_list(directory, file_problems, throttled)
+    summary = [
+        f"文件已下载到：\n{directory}",
+        "",
+        f"成功 {len(succeeded)} 个，失败 {len(file_problems) + len(throttled)} 个",
+    ]
     if file_problems:
-        sections.append(
-            "以下文件下载失败（孤立失败，判定为文件自身不可用，已跳过重试）：\n"
-            + "\n\n".join(f"{relative_path(state['save_path'], directory)}\n{state['failed_reason']}" for state in file_problems)
-        )
+        summary.append(f"· 文件自身不可用（孤立失败，已跳过重试）：{len(file_problems)} 个")
     if throttled:
-        sections.append(
-            "以下文件疑似限流，重试后仍失败：\n"
-            + "\n\n".join(f"{relative_path(state['save_path'], directory)}\n{state['failed_reason']}" for state in throttled)
-        )
+        summary.append(f"· 疑似限流（重试后仍失败）：{len(throttled)} 个")
     if cancelled_states:
-        sections.append(f"另有 {len(cancelled_states)} 个文件因取消未下载。")
-    messagebox.showwarning("下载完成", f"文件已下载到：{directory}\n\n" + "\n\n".join(sections))
+        summary.append(f"· 因取消未下载：{len(cancelled_states)} 个")
+    if failure_list:
+        summary += ["", f"完整失败清单已保存为：\n{failure_list}", "", "是否打开清单？"]
+        if messagebox.askyesno("下载完成（有失败）", "\n".join(summary), icon="warning"):
+            try:
+                open_path(failure_list)
+            except Exception as e: # 打不开（无默认程序 / 无桌面环境）不影响下载结果，只提示一下
+                print_error(e)
+                messagebox.showinfo("无法打开清单", f"请手动打开：\n{failure_list}")
+    else:
+        summary += ["", "完整清单见界面右下角的 “下载日志”。"]
+        messagebox.showwarning("下载完成（有失败）", "\n".join(summary))
 
 def download_file(url: str, save_path: str, chapters: list[dict] | None = None, current_state: dict | None = None) -> None: # 下载文件
     if current_state is None: # 保留单独下载文件的调用方式
