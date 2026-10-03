@@ -2,7 +2,7 @@
 # 解析单个资源页面，获取资源标题、下载直链、文件格式与章节目录
 
 import re
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 from urllib.parse import urlparse, parse_qs
 
 from .network import REQUEST_TIMEOUT, headers, request_headers, session
@@ -77,6 +77,23 @@ def storage_url(item: dict) -> str | None:
     if resource_url:
         return resource_url.replace("cs_path:${ref-path}", "https://r1-ndr-private.ykt.cbern.com.cn")
     return next((url for url in item.get("ti_storages") or [] if url), None)
+
+def first_source_url(items: list[dict], is_candidate: Callable[[dict], bool]) -> tuple[str | None, str]:
+    """在 ti_items 里按条件取第一个可用直链，返回 (url, 格式)。
+
+    取值逻辑与 storage_url 共用一份，避免同一件事出现多份健壮性不同的实现。
+    这里一律用 .get：子资源条目缺字段时就跳过它，不能让 KeyError 冒到顶层把整条 URL 毁掉。
+    """
+    for item in items:
+        if not is_candidate(item):
+            continue
+        resource_format = item.get("ti_format") or "pdf"
+        if resource_format == "folder":
+            continue
+        resource_url = storage_url(item)
+        if resource_url:
+            return resource_url, resource_format
+    return None, "pdf"
 
 def select_audio_playback(ti_items: list[dict]) -> tuple[str, str] | None:
     """按官网音频播放器的顺序选择可播放文件。不是音频资源时返回 None。"""
@@ -201,48 +218,21 @@ def parse(url: str, bookmarks: bool) -> list[ResourceInfo] | None: # 解析资�
         # 3. 获取资源标题、下载链接及章节目录
         def get_resource_info(resource_data: dict, root_title: str | None = None, edition: str | None = None) -> ResourceInfo | None:
             title = combine_resource_title(root_title, resolve_title(resource_data.get("global_title"), resource_data.get("title"), resource_data.get("id")))
+            # 子资源可能没有 ti_items（例如专题课里混进一个坏条目），一律 .get：
+            # 用硬索引时 KeyError 会冒到最外层，把整条 URL 下的全部资源一起毁掉。
+            items: list[dict] = resource_data.get("ti_items") or []
             resource_url: str | None = None
             resource_format = "pdf"
-            audio_playback = select_audio_playback(resource_data.get("ti_items") or [])
+            audio_playback = select_audio_playback(items)
             if audio_playback:
-                resource_url, resource_format = audio_playback
-
-            for item in resource_data["ti_items"]: # 文档仍取源文件；音频已在上面按播放器规则选完
-                if resource_url:
-                    break
-                if not item.get("ti_is_source_file"):
-                    continue
-
-                resource_format = item.get("ti_format") or "pdf"
-                if resource_format == "folder":
-                   continue
-
-                resource_url = item.get("ti_storage") # 获取并构造资源的 URL
-                if resource_url:
-                    resource_url = resource_url.replace("cs_path:${ref-path}", "https://r1-ndr-private.ykt.cbern.com.cn")
-                else:
-                    resource_url = next((url for url in item["ti_storages"] if url), None)
-                    if not resource_url:
-                        continue
-                break
-
-            if not resource_url: # 使用不同的判断条件寻找源文件
-                for item in resource_data["ti_items"]:
-                    if item.get("ti_file_flag") not in ("source", "pdf", "ppt", "pptx", "doc", "docx"):
-                        continue
-
-                    resource_format = item.get("ti_format") or "pdf"
-                    if resource_format == "folder":
-                      continue
-
-                    resource_url = item.get("ti_storage")
-                    if resource_url:
-                        resource_url = resource_url.replace("cs_path:${ref-path}", "https://r1-ndr-private.ykt.cbern.com.cn")
-                    else:
-                        resource_url = next((url for url in item["ti_storages"] if url), None)
-                        if not resource_url:
-                            continue
-                    break
+                resource_url, resource_format = audio_playback # 音频已按播放器规则选完，文档仍取源文件
+            else:
+                resource_url, resource_format = first_source_url(items, lambda item: bool(item.get("ti_is_source_file")))
+                if not resource_url: # 换一组判断条件再找一次源文件
+                    resource_url, resource_format = first_source_url(
+                        items,
+                        lambda item: item.get("ti_file_flag") in ("source", "pdf", "ppt", "pptx", "doc", "docx"),
+                    )
 
             if not resource_url:
                 return None
@@ -251,15 +241,9 @@ def parse(url: str, bookmarks: bool) -> list[ResourceInfo] | None: # 解析资�
             chapters: list[dict] = []
             if bookmarks and resource_format == "pdf":
                 try:
-                    mapping_url: str | None = None
-                    for item in resource_data["ti_items"]:
-                        if item["ti_file_flag"] == "ebook_mapping":
-                            mapping_url = item.get("ti_storage") # 形如 https://r1-ndr-private.ykt.cbern.com.cn/edu_product/esp/assets/*.pkg/ebook_mapping.txt
-                            if mapping_url:
-                                mapping_url = mapping_url.replace("cs_path:${ref-path}", "https://r1-ndr-private.ykt.cbern.com.cn")
-                            else:
-                                mapping_url = next((url for url in item["ti_storages"] if url), None)
-                            break
+                    # 形如 https://r1-ndr-private.ykt.cbern.com.cn/edu_product/esp/assets/*.pkg/ebook_mapping.txt
+                    mapping_item = next((item for item in items if item.get("ti_file_flag") == "ebook_mapping"), None)
+                    mapping_url = storage_url(mapping_item) if mapping_item else None
 
                     if mapping_url:
                         # a. 下载 mapping 文件获取页码和 ebook_id。
@@ -334,7 +318,7 @@ def parse(url: str, bookmarks: bool) -> list[ResourceInfo] | None: # 解析资�
             resources_resp = session.get(f"https://s-file-1.ykt.cbern.com.cn/zxx/ndrs/special_edu/thematic_course/{content_id}/resources/list.json")
             resources_data: list[dict] = resources_resp.json()
             for resource in resources_data:
-                resource_info = get_resource_info(resource, data["title"], root_edition)
+                resource_info = get_resource_info(resource, data.get("title"), root_edition)
                 if resource_info:
                     resources_info.append(resource_info)
         elif data.get("relations"): # 课程包等多资源页面（含导学案、课件、PPT 等）

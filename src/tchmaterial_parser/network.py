@@ -26,6 +26,16 @@ headers = { # 设置请求头部，包含认证信息
     "X-ND-AUTH": 'MAC id="0",nonce="0",mac="0"',
 }
 
+def sync_session_headers() -> None:
+    """把全局 headers 装配到 session 上。
+
+    headers 会被 config.apply_static_headers() 原地修改（用户更换 Token 时），
+    而 dict.update() 拷贝的是值、不会跟随后续改动，所以每次改完都要再同步一次。
+    """
+    session.headers.update(headers)
+
+sync_session_headers() # 导入即装配：否则所有公开请求都以 requests 默认身份发出，很容易被 WAF 当爬虫拦下
+
 def request_headers(url: str, method: str = "GET") -> dict[str, str]:
     """复制全局请求头，并用 auth.build_nd_auth 覆盖 X-ND-AUTH。
 

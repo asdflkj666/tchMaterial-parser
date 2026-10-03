@@ -358,3 +358,103 @@ class DownloadBatchTest(unittest.TestCase):
         with patch.object(panel, "download_states", []):
             panel.shutdown_downloads(timeout=0.1)
         self.assertFalse(panel.controller.is_cancelled)
+
+    def test_next_failure_list_path_adds_timestamp_when_name_is_taken(self):
+        """回归 B5：同名清单已存在时改用带时间戳的名字，绝不覆盖。"""
+        base = Path(self.directory) / panel.FAILURE_LIST_FILENAME
+        self.assertEqual(panel.next_failure_list_path(self.directory), str(base))
+
+        base.write_text("第一批", encoding="utf-8")
+        second = panel.next_failure_list_path(self.directory)
+
+        self.assertNotEqual(second, str(base))
+        self.assertEqual(Path(second).parent, Path(self.directory))
+        self.assertTrue(Path(second).name.startswith("下载失败清单_"))
+        self.assertTrue(second.endswith(".txt"))
+        self.assertEqual(base.read_text(encoding="utf-8"), "第一批")  # 第一批内容原样保留
+
+    def test_failure_lists_from_two_batches_do_not_overwrite_each_other(self):
+        """回归 B5：同目录连跑两批，「先下一批→看清单→再补下」的第二次不能盖掉第一次的清单。"""
+        def download(url, path, chapters, state):
+            state["failed_reason"] = "服务器返回 HTTP 状态码 404"
+            state["retryable"] = False
+            state["finished"] = True
+
+        with patch.object(panel, "download_file", download):
+            panel.start_download_batch(self.targets(1), self.directory)
+            self.finish()
+            panel.start_download_batch(self.targets(1), self.directory)
+            self.finish()
+
+        names = sorted(path.name for path in Path(self.directory).glob("下载失败清单*.txt"))
+        self.assertEqual(len(names), 2)
+        self.assertIn(panel.FAILURE_LIST_FILENAME, names)
+
+    def test_shutdown_timeout_follows_the_chunk_read_timeout(self):
+        """回归 B6：退出等待上限不能死写 5 秒；分块读超时最长就是 download_timeout。"""
+        with patch.dict(panel.config.download_settings, {"download_timeout": 60}):
+            self.assertEqual(panel.shutdown_timeout(), 62.0)
+        with patch.dict(panel.config.download_settings, {"download_timeout": 10}):
+            self.assertEqual(panel.shutdown_timeout(), 12.0)
+
+    def test_shutdown_without_explicit_timeout_uses_the_configured_limit(self):
+        states = [panel.create_download_state("https://example.com/a.pdf", str(Path(self.directory) / "a.pdf"))]
+        with patch.object(panel, "download_states", states), \
+             patch.object(panel, "shutdown_timeout", return_value=0.2) as configured:
+            panel.shutdown_downloads()
+
+        configured.assert_called_once()
+        self.assertTrue(panel.controller.is_cancelled)
+
+    def test_unparsed_urls_warn_only_counts_and_log_details(self):
+        """回归 B8：几百条坏链接只弹一个数量提示，明细（脱敏后）进日志区。"""
+        logged: list[str] = []
+        failed = {f"https://example.com/bad{index}?accessToken=secret{index}" for index in range(5)}
+        with patch.object(panel, "log_message", logged.append):
+            panel.warn_unparsed_urls(failed)
+
+        self.warning.assert_called_once()
+        message = self.warning.call_args[0][1]
+        self.assertIn("5", message)
+        self.assertLess(len(message), 200)  # 弹窗只报数量，不再把每条链接堆进去
+        for url in failed:
+            self.assertNotIn(url, message)
+
+        log = "\n".join(logged)
+        self.assertIn("无法解析", log)
+        self.assertIn("https://example.com/bad0", log)
+        self.assertNotIn("secret0", log)  # accessToken 已被脱敏
+        self.assertIn("<已隐藏>", log)
+
+    def test_unparsed_urls_do_not_warn_when_nothing_failed(self):
+        with patch.object(panel, "log_message"):
+            panel.warn_unparsed_urls(set())
+        self.warning.assert_not_called()
+
+    def test_parse_and_copy_disables_download_button_while_parsing(self):
+        """回归 B10：解析期间「下载」也要禁用。
+
+        否则解析还没结束用户就能再点一次，跑起第二条解析流水线：两条共享进度标签互相覆盖、
+        各弹一个对话框、还都会去 reset 控制器。
+        """
+        copy_btn = self.context.enter_context(patch.object(panel.widgets, "copy_btn", Mock()))
+        url_text = self.context.enter_context(patch.object(panel.widgets, "url_text", Mock()))
+        url_text.get.return_value = "https://example.com/1\n"
+
+        captured: dict = {}
+        self.context.enter_context(patch.object(
+            panel, "parse_urls_in_background",
+            lambda urls, bookmarks, on_finished: captured.update(on_finished=on_finished),
+        ))
+
+        panel.parse_and_copy()
+
+        copy_btn.config.assert_called_with(state="disabled")
+        panel.widgets.download_btn.config.assert_called_with(state="disabled")
+
+        panel.widgets.download_btn.config.reset_mock()
+        copy_btn.config.reset_mock()
+        captured["on_finished"]([], set())  # 模拟后台解析完成
+
+        panel.widgets.download_btn.config.assert_called_with(state="normal")
+        copy_btn.config.assert_called_with(state="normal")

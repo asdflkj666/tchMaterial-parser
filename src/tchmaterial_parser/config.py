@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from .auth import TokenCredentials, parse_token_input
-from .network import headers
+from .network import headers, sync_session_headers
 from .platform_utils import os_name, print_error, winreg
 
 access_token: str | None = None
@@ -206,6 +206,7 @@ def apply_static_headers() -> None:
     """更新全局占位头。私有下载不要用这份 X-ND-AUTH，应走 network.request_headers。"""
     headers["Authorization"] = f"Bearer {access_token or '0'}"
     headers["X-ND-AUTH"] = f'MAC id="{access_token or "0"}",nonce="0",mac="0"'
+    sync_session_headers() # 已经建好的 session 不会自动跟上这里对 headers 的原地修改
 
 def apply_credentials(credentials: TokenCredentials) -> None:
     """写入内存中的凭据并刷新占位头。空 access_token 视为未登录。"""

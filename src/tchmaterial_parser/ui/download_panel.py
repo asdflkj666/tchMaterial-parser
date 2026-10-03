@@ -127,8 +127,13 @@ def download_mirror_urls(url: str) -> list[str]:
     if hostname not in PRIVATE_DOWNLOAD_HOSTS:
         return [url]
 
+    # urlsplit().hostname 不含端口，直接拿它重建会把 https://host:8443/x 悄悄变成 https://host/x，所以显式补回
+    port_suffix = f":{parts.port}" if parts.port else ""
     ordered_hosts = [hostname, *(host for host in PRIVATE_DOWNLOAD_HOSTS if host != hostname)]
-    return [urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment)) for host in ordered_hosts]
+    return [
+        urlunsplit((parts.scheme, host + port_suffix, parts.path, parts.query, parts.fragment))
+        for host in ordered_hosts
+    ]
 
 def _pace_request() -> None:
     """避免批量任务在同一瞬间打出一串私有 CDN 请求。"""
@@ -197,8 +202,11 @@ def request_download(url: str):
                 report_rate_limit_failure(url) # 已退避重试过，仍按限流上报
                 return last_response, attempted_urls
             if response.status_code == 429:
-                report_rate_limit_failure(url) # 明确的限流响应
-                break
+                # 429 是平台在明说“你太快了”，此时应当立刻收手。
+                # 这里不能只 break：break 只跳出内层 while，外层 for 会接着打 r2/r3，
+                # 把请求量翻成三倍——正是本文件顶部注释警告的那种做法。
+                report_rate_limit_failure(url)
+                return last_response, attempted_urls
             break
 
     if last_response is not None:
@@ -282,8 +290,10 @@ _WINDOWS_RESERVED_NAMES = frozenset({
     *(f"LPT{i}" for i in range(10)),
 })
 
+_MAX_FILENAME_CHARS = 150 # 单个文件名的字符数上限：再叠加“学段/学科/版本”三级子目录也不会顶到 Windows 的 MAX_PATH
+
 def sanitize_filename(filename: str) -> str:
-    """将非法文件名字符换成全角对应字符，并避开 Windows 保留设备名。"""
+    """将非法文件名字符换成全角对应字符，避开 Windows 保留设备名，并截断过长的名字。"""
     filename = _CONTROL_FILENAME_CHARS.sub("_", filename.translate(_INVALID_FILENAME_REPLACEMENTS))
     filename = filename.rstrip(" .")
     if not filename:
@@ -291,8 +301,12 @@ def sanitize_filename(filename: str) -> str:
 
     stem, extension = os.path.splitext(filename)
     if stem.upper() in _WINDOWS_RESERVED_NAMES:
-        return f"_{stem}{extension}"
-    return filename
+        stem = f"_{stem}"
+    # 超长文件名在 Windows 上会直接 OSError，失败原因是一大串 traceback（用户看不懂），
+    # 而且这类失败会被判成“孤立失败”不再重试；按字符数截断并保留扩展名。
+    if len(stem) + len(extension) > _MAX_FILENAME_CHARS:
+        stem = stem[: max(1, _MAX_FILENAME_CHARS - len(extension))]
+    return f"{stem}{extension}"
 
 def download_filename(resource: ResourceInfo) -> str:
     return sanitize_filename(f"{resource.title or 'download'}.{resource.file_format}")
@@ -381,12 +395,25 @@ def cancel_downloads() -> None: # 取消全部：新任务不再开始，进行�
     log_message("[提示] 已取消剩余任务，正在中断进行中的下载")
     _set_control_buttons(pause_state="disabled", cancel_state="disabled")
 
-def shutdown_downloads(timeout: float = 5.0) -> None: # 退出程序前取消下载并等待线程收尾
+def shutdown_timeout() -> float:
+    """退出时等待下载收尾的上限（秒）。
+
+    分块读取的“相邻两次收数据”超时最长就是 download_timeout（默认 60 秒），
+    固定等 5 秒在网络卡住时根本等不到线程走到取消检查点。
+    """
+    return float(config.download_settings["download_timeout"]) + 2.0
+
+def shutdown_downloads(timeout: float | None = None) -> None: # 退出程序前取消下载并等待线程收尾
     """退出时不能直接销毁窗口：下载线程会在分块检查点清理 .tmp，线程池线程又是非 daemon 的，
-    不等它们结束就会留下半成品文件、甚至让进程在后台滞留到下载完成。"""
+    不等它们结束就会留下半成品文件、甚至让进程在后台滞留到下载完成。
+
+    timeout 为 None 时取 shutdown_timeout()，让等待上限跟着分块读超时走。
+    """
     if not downloads_active():
         return
     controller.cancel()
+    if timeout is None:
+        timeout = shutdown_timeout()
     deadline = time.monotonic() + timeout
     while downloads_active() and time.monotonic() < deadline:
         time.sleep(0.05)
@@ -463,6 +490,9 @@ def collect_parsed_resources(
     resource_urls: set[str] = set()
     failed_urls: set[str] = set()
     for index, url in enumerate(urls):
+        # 解析阶段同样要限速：每条链接要发 1~3 个请求，几百条会在开始下载之前就把限流额度打光，
+        # 用户看到的就是「刚开始下载就触发限流保护」，而此时一个文件都还没下。
+        _pace_request()
         if on_progress:
             on_progress(index + 1, len(urls))
         resources_info = parse_fn(url, bookmarks)
@@ -486,10 +516,27 @@ def parse_urls_in_background(
     批量选择的链接可能多达上百条，逐条解析需多次网络请求，放在主线程会让界面未响应。
     """
     def worker() -> None:
-        resources_info_list, failed_urls = collect_parsed_resources(parse, urls, bookmarks, show_parse_progress)
+        try:
+            resources_info_list, failed_urls = collect_parsed_resources(parse, urls, bookmarks, show_parse_progress)
+        except Exception as e: # 解析线程抛异常也必须回主线程收尾，否则按钮一直停在禁用状态、界面像卡死
+            print_error(e)
+            resources_info_list, failed_urls = [], set()
         ui_call(on_finished, resources_info_list, failed_urls)
 
     thread_it(worker)
+
+def warn_unparsed_urls(failed_urls: set[str]) -> None:
+    """无法解析的链接只报数量，明细写进日志区。
+
+    把几百条链接逐条塞进 messagebox 会把对话框撑满整个屏幕且无法滚动，
+    与本文件给失败清单定的规矩自相矛盾。
+    """
+    if not failed_urls:
+        return
+    log_message(f"[提示] 以下 {len(failed_urls)} 行链接无法解析：")
+    for url in sorted(failed_urls):
+        log_message(f"    {redact_access_token(url)}")
+    messagebox.showwarning("警告", f"有 {len(failed_urls)} 行链接无法解析，明细见日志区。")
 
 def parse_and_copy() -> None: # 解析并复制链接
     urls = {line.strip() for line in widgets.url_text.get("1.0", "end").splitlines() if line.strip()} # 获取所有非空行并去重
@@ -497,15 +544,18 @@ def parse_and_copy() -> None: # 解析并复制链接
         return
 
     widgets.copy_btn.config(state="disabled") # 解析期间禁用按钮，避免重复触发
+    # 「下载」也要一起禁用：否则解析还没结束用户就能再点一次，跑起第二条解析流水线，
+    # 两条共享进度标签互相覆盖、各弹一个对话框，还都会去 reset 控制器。
+    widgets.download_btn.config(state="disabled")
 
     def copy_urls(resources_info_list: list[ResourceInfo], failed_urls: set[str]) -> None: # 解析完成后在主线程复制链接
         widgets.copy_btn.config(state="normal") # 恢复按钮为启用状态
+        widgets.download_btn.config(state="normal")
         if not downloads_active():
             widgets.progress_label.config(text="等待下载") # 解析进度已无用，恢复默认文案
 
         resource_urls = {resource.url for resource in resources_info_list}
-        if failed_urls:
-            messagebox.showwarning("警告", "以下 “行” 无法解析：\n" + "\n".join(failed_urls))
+        warn_unparsed_urls(failed_urls)
 
         if resource_urls:
             try:
@@ -552,6 +602,7 @@ def download() -> None: # 下载资源文件
                 widgets.progress_label.config(text="等待下载")
             widgets.download_btn.config(state="normal") # 设置下载按钮为启用状态
 
+        dir_path: str | None = None # 只有多文件分支会赋值；下面取用时不要依赖短路求值才不炸
         if len(resources_info_list) > 1:
             messagebox.showinfo("提示", "您将下载多个文件，请选择要下载文件的位置。本程序将在该文件夹中按教材分类创建子文件夹，并以资源名称命名文件。")
             dir_path = filedialog.askdirectory() # 选择文件夹
@@ -576,16 +627,14 @@ def download() -> None: # 下载资源文件
                 download_targets.append((resource, save_path))
         else: # 没有可下载的资源
             restore_download_btn()
-            if failed_urls:
-                messagebox.showwarning("警告", "以下 “行” 无法解析：\n" + "\n".join(failed_urls)) # 显示警告对话框
+            warn_unparsed_urls(failed_urls)
             return
 
         widgets.progress_label.config(text=f"正在下载 {len(download_targets)} 个文件")
         directory = dir_path if len(resources_info_list) > 1 else os.path.dirname(download_targets[0][1])
         start_download_batch(download_targets, directory)
 
-        if failed_urls:
-            messagebox.showwarning("警告", "以下 “行” 无法解析：\n" + "\n".join(failed_urls)) # 显示警告对话框
+        warn_unparsed_urls(failed_urls)
 
     parse_urls_in_background(list(urls), widgets.bookmark_var.get(), start_downloads)
 
@@ -725,6 +774,25 @@ def log_failure_list(header: str, states: list[dict], directory: str) -> None:
         reason = (state.get("failed_reason") or "未知原因").splitlines()[0]
         log_message(f"    {relative_path(state['save_path'], directory)} — {reason}")
 
+def next_failure_list_path(directory: str) -> str:
+    """失败清单的落盘路径；同名文件已存在时改用带时间戳的名字。
+
+    文件名固定会让「先下一批 → 看清单 → 再补下」的第二次把第一次的清单覆盖掉，
+    而那份清单正是用户要照着重跑的依据。
+    """
+    stem, extension = os.path.splitext(FAILURE_LIST_FILENAME)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for name in (FAILURE_LIST_FILENAME, f"{stem}_{stamp}{extension}"):
+        path = os.path.join(directory, name)
+        if not os.path.exists(path):
+            return path
+    index = 2 # 同一秒内连跑两批的极端情况：加序号，总之不覆盖已有清单
+    while True:
+        path = os.path.join(directory, f"{stem}_{stamp}_{index}{extension}")
+        if not os.path.exists(path):
+            return path
+        index += 1
+
 def write_failure_list(directory: str, file_problems: list[dict], throttled: list[dict]) -> str | None:
     """把两类失败清单写成下载目录下的文本文件，返回文件路径；没有失败或写不进去则返回 None。
 
@@ -751,7 +819,7 @@ def write_failure_list(directory: str, file_problems: list[dict], throttled: lis
             lines.append(relative_path(state["save_path"], directory))
             lines.append(f"    {reason}")
         lines.append("")
-    path = os.path.join(directory, FAILURE_LIST_FILENAME)
+    path = next_failure_list_path(directory)
     try:
         with open(path, "w", encoding="utf-8") as file:
             file.write("\n".join(lines) + "\n")

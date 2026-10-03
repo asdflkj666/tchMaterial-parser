@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
 # 为下载好的 PDF 写入章节书签
 
+import os
+
 from pypdf import PdfReader, PdfWriter
 
 from .platform_utils import print_error
 
 def add_bookmarks(pdf_path: str, chapters: list[dict]) -> None: # 给 PDF 添加书签
+    # 先写临时文件、成功后再替换回原路径：直接 open(pdf_path, "wb") 会先把原文件截断，
+    # 一旦中途失败（磁盘满、PDF 结构异常），留下的半截文件会被调用方当成「下载成功」的成品。
+    temp_path = f"{pdf_path}.bmk.tmp"
     try:
         if not chapters:
             return
@@ -40,9 +45,14 @@ def add_bookmarks(pdf_path: str, chapters: list[dict]) -> None: # 给 PDF 添加
         # 开始处理章节数据
         add_chapter(chapters)
 
-        # 保存修改后的文件
-        with open(pdf_path, "wb") as f:
+        # 保存修改后的文件（写临时文件，成功后再替换）
+        with open(temp_path, "wb") as f:
             writer.write(f)
+        os.replace(temp_path, pdf_path)
 
     except Exception as e:
         print_error(e)
+        try:
+            os.remove(temp_path) # 书签写失败不影响已下载的 PDF 本体，清掉半成品即可
+        except OSError:
+            pass

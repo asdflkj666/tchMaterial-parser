@@ -1,4 +1,5 @@
 import unittest
+from urllib.parse import urlsplit
 
 from requests import ConnectionError
 
@@ -184,6 +185,36 @@ class DownloadFailureTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(attempted_urls, [original_url])
         self.assertEqual(fake_session.requested_urls, [original_url, original_url])
+
+    def test_does_not_spray_mirrors_after_rate_limit(self) -> None:
+        """429 是平台在明说“你太快了”，此时接着打 r2/r3 只会把限流打得更死。
+
+        这里曾经写成 break —— 它只跳出内层 while，外层 for 会继续换镜像，把请求量翻成三倍。
+        """
+        download_panel.config.access_token = "tok"
+        download_panel.config.mac_key = "key"
+        self.addCleanup(download_panel.controller.reset) # 本用例会上报一次限流，别把冷却状态漏给后续用例
+        fake_session = FakeSession(429)
+        download_panel.session = fake_session
+        url = "https://r1-ndr-private.ykt.cbern.com.cn/book.pdf"
+
+        response, attempted_urls = download_panel.request_download(url)
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(attempted_urls, [url])
+        self.assertEqual(fake_session.requested_urls, [url])
+
+    def test_keeps_port_when_rebuilding_mirror_urls(self) -> None:
+        """urlsplit().hostname 不含端口，重建时丢掉它会让请求静默打到 443。"""
+        urls = download_panel.download_mirror_urls("https://r1-ndr-private.ykt.cbern.com.cn:8443/book.pdf")
+
+        self.assertEqual(len(urls), 3)
+        self.assertEqual([urlsplit(url).port for url in urls], [8443, 8443, 8443])
+        self.assertEqual(urlsplit(urls[1]).hostname, "r2-ndr-private.ykt.cbern.com.cn")
+        self.assertEqual(
+            download_panel.download_mirror_urls("https://example.com:8443/book.pdf"),
+            ["https://example.com:8443/book.pdf"], # 公开地址原样返回
+        )
 
     def test_does_not_retry_authentication_failures_or_public_urls(self) -> None:
         private_url = "https://r1-ndr-private.ykt.cbern.com.cn/book.pdf"

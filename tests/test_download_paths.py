@@ -4,6 +4,7 @@ import unittest
 
 from src.tchmaterial_parser.api import ResourceInfo, get_relative_dir
 from src.tchmaterial_parser.ui.download_panel import (
+    _MAX_FILENAME_CHARS,
     allocate_download_paths,
     download_filename,
     sanitize_filename,
@@ -218,6 +219,25 @@ class SanitizeFilenameTest(unittest.TestCase):
     def test_download_filename_sanitizes_title_but_keeps_extension(self) -> None:
         info = resource("What does the title mean?", "audio-1", file_format="mp3")
         self.assertEqual(download_filename(info), "What does the title mean？.mp3")
+
+    def test_truncates_long_names_but_keeps_extension(self) -> None:
+        """回归 B11：254 字符的文件名原样放行时，叠加三级子目录会顶到 Windows 的 MAX_PATH。"""
+        result = sanitize_filename("长" * 254 + ".pdf")
+
+        self.assertEqual(len(result), _MAX_FILENAME_CHARS)
+        self.assertTrue(result.endswith(".pdf"))
+        self.assertEqual(result, "长" * (_MAX_FILENAME_CHARS - len(".pdf")) + ".pdf")
+
+    def test_truncates_long_names_without_extension(self) -> None:
+        self.assertEqual(len(sanitize_filename("长" * 254)), _MAX_FILENAME_CHARS)
+
+    def test_leaves_names_at_or_below_the_limit_untouched(self) -> None:
+        boundary = "a" * (_MAX_FILENAME_CHARS - len(".pdf")) + ".pdf"
+        self.assertEqual(len(boundary), _MAX_FILENAME_CHARS)
+        self.assertEqual(sanitize_filename(boundary), boundary)
+
+    def test_still_prefixes_reserved_names_after_truncation_check(self) -> None:
+        self.assertEqual(sanitize_filename("CON.mp3"), "_CON.mp3")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 from requests import ReadTimeout, Response
 from requests.adapters import BaseAdapter
 
-from src.tchmaterial_parser import api, network
+from src.tchmaterial_parser import api, config, network
 from src.tchmaterial_parser.ui import download_panel
 
 
@@ -70,3 +70,75 @@ class RequestTimeoutTest(unittest.TestCase):
         resources, failed = completed.call_args.args
         self.assertEqual([resource.url for resource in resources], ["https://example.com/book.pdf"])
         self.assertEqual(failed, {bad})
+
+
+class RelationsAdapter(BaseAdapter):
+    """relations 里混进一个没有 ti_items 的子资源。"""
+
+    def send(self, request, **kwargs):
+        data = {"title": "课程包", "relations": {"ebook": [
+            {"title": "坏条目"}, # 缺 ti_items
+            {"title": "好条目", "ti_items": [
+                {"ti_is_source_file": True, "ti_file_flag": "source", "ti_format": "pdf", "ti_storage": "https://example.com/good.pdf"},
+            ]},
+        ]}}
+        response = Response()
+        response.status_code = 200
+        response.url = request.url
+        response._content = json.dumps(data).encode("utf-8")
+        return response
+
+    def close(self):
+        pass
+
+
+class SessionHeadersTest(unittest.TestCase):
+    """headers 定义了却从没装到 session 上：所有公开请求会顶着 requests 的默认身份发出，很容易被 WAF 拦。"""
+
+    def test_global_headers_are_installed_on_the_session(self):
+        for name, value in network.headers.items():
+            with self.subTest(header=name):
+                self.assertEqual(network.session.headers.get(name), value)
+        self.assertNotIn("python-requests", network.session.headers.get("User-Agent", ""))
+
+    def test_session_headers_follow_token_changes(self):
+        """apply_static_headers 原地改的是 headers 字典，已建好的 session 必须跟着更新。"""
+        token_before = config.access_token
+        self.addCleanup(config.apply_static_headers) # 先注册的后执行：先把 token 还原，再重刷头部
+        self.addCleanup(setattr, config, "access_token", token_before)
+
+        config.access_token = "brand-new-token"
+        config.apply_static_headers()
+
+        self.assertEqual(network.session.headers["Authorization"], "Bearer brand-new-token")
+        self.assertIn('id="brand-new-token"', network.session.headers["X-ND-AUTH"])
+
+
+class BrokenSubResourceTest(unittest.TestCase):
+    def test_one_broken_sub_resource_does_not_lose_the_whole_url(self):
+        """专题课/课程包是一条 URL 对应 N 个子资源：其中一个缺 ti_items 不该让整条 URL 解析失败。"""
+        session = network.TimeoutSession()
+        session.trust_env = False
+        session.mount("https://", RelationsAdapter())
+        self.addCleanup(session.close)
+
+        with patch.object(api, "session", session):
+            result = api.parse("https://basic.smartedu.cn/tchMaterial/detail?contentId=course-pack", False)
+
+        self.assertEqual([resource.url for resource in result], ["https://example.com/good.pdf"])
+
+    def test_first_source_url_skips_items_without_storage_fields(self):
+        items = [
+            {"ti_file_flag": "source", "ti_format": "pdf"}, # 没有 ti_storage / ti_storages
+            {"ti_file_flag": "source", "ti_format": "pdf", "ti_storage": "https://example.com/a.pdf"},
+        ]
+
+        self.assertEqual(
+            api.first_source_url(items, lambda item: item.get("ti_file_flag") == "source"),
+            ("https://example.com/a.pdf", "pdf"),
+        )
+
+    def test_first_source_url_skips_folders(self):
+        items = [{"ti_file_flag": "source", "ti_format": "folder", "ti_storage": "https://example.com/dir"}]
+
+        self.assertEqual(api.first_source_url(items, lambda item: True), (None, "pdf"))

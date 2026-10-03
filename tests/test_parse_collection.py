@@ -1,7 +1,9 @@
 import unittest
 from typing import get_type_hints
+from unittest.mock import patch
 
 from src.tchmaterial_parser.api import ResourceInfo
+from src.tchmaterial_parser.ui import download_panel as panel
 from src.tchmaterial_parser.ui.download_panel import collect_parsed_resources, parse_urls_in_background
 
 
@@ -51,6 +53,18 @@ class CollectParsedResourcesTest(unittest.TestCase):
         collect_parsed_resources(fake_parse, ["https://example.com/1", "https://example.com/2", "https://example.com/3"], True, lambda current, total: progress.append((current, total)))
 
         self.assertEqual(progress, [(1, 3), (2, 3), (3, 3)])
+
+    def test_paces_every_parse_request(self) -> None:
+        """回归 B7：解析阶段也要限速。每条链接要发 1~3 个请求，不限速的话批次还没开始下载
+        就把限流额度打光了，用户看到的是「刚开始下载就触发限流保护」。"""
+        def fake_parse(url: str, bookmarks: bool):
+            return None
+
+        calls: list[int] = []
+        with patch.object(panel, "_pace_request", side_effect=lambda: calls.append(1)):
+            collect_parsed_resources(fake_parse, ["https://example.com/1", "https://example.com/2", "https://example.com/3"], False)
+
+        self.assertEqual(len(calls), 3)  # 每一条链接解析前都限速一次
 
 
 if __name__ == "__main__":
